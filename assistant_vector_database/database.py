@@ -1,5 +1,5 @@
 # database.py
-
+from assistant_tools.utils import play_sfx
 from langchain_huggingface import HuggingFaceEmbeddings 
 from langchain_chroma import Chroma  
 from datetime import datetime
@@ -8,6 +8,7 @@ import uuid
 
 # Эмбеддинг модель, чтобы превращать запросы пользователя в векторы и искать похожие в базе данных
 print("Initialization of the embedding model.")
+play_sfx("start_embedding_model")
 embedding_model = HuggingFaceEmbeddings(
     model_name = "BAAI/bge-m3", # Можно выбрать intfloat/multilingual-e5-large - она более быстрая, но менее точная
     encode_kwargs = {"normalize_embeddings": True} # при создании векторов из текста делать нормализацию
@@ -15,6 +16,7 @@ embedding_model = HuggingFaceEmbeddings(
 
 # Векторная база данных
 print("Initialization of vector database.")
+play_sfx("lauch_vector_database")
 vectorstore = Chroma(
     collection_name="assistant_database", # Называем коллекцию внутри базы данных так
     embedding_function=embedding_model, # # Прикрепление модели эмбеддингов
@@ -46,7 +48,7 @@ def find_records_in_database(**kwargs):
     if not query:
         return
 
-    result_DB = vectorstore.similarity_search(query, k=5)
+    result_DB = vectorstore.similarity_search(query, k=3)
 
     # Если база пуста
     if not result_DB:

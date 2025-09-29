@@ -5,6 +5,7 @@ import datetime
 import pyautogui  
 import os
 from dotenv import load_dotenv
+from assistant_vector_database.database import add_new_memory
 
 load_dotenv() # для загрузки API ключей из .env
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
@@ -59,3 +60,7 @@ def make_screenshot():
         return {"status": "success", "file_path": os.path.abspath(filename)}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+def save_to_memory(text):
+    """Сохраняет в память любой факт о пользователе"""
+    add_new_memory(text)

@@ -44,5 +44,3 @@ try:
         #TODO: Сделать фоновые задачи, по типу напоминания о разминке или случайных комментариев/интересных фактов.
 except KeyboardInterrupt:
     print("\nThe program is ending.")
-
-

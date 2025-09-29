@@ -24,7 +24,6 @@ class EventBus:
 
 event_bus = EventBus()
 
-
 # Функции обертки
 def subscribe(event_type, handler):
     event_bus.subscribe(event_type, handler)

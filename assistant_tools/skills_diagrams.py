@@ -67,7 +67,7 @@ save_to_memory_scheme = {
                 "description": "The specific, concise fact to be saved. For example: 'The user's dog is named Rex.' or 'The user is working on a post-apocalyptic car combat game.'",
             },
         },
-        "required": ["text", "doc_id"]
+        "required": ["text"]
     },
 }
 

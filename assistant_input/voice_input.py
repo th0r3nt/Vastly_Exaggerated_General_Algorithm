@@ -1,4 +1,4 @@
-# input.py
+# voice_input.py
 import threading
 import vosk
 import logging

@@ -11,7 +11,11 @@ SOUNDS = {
     'processing': ('sounds/processing1.mp3',),
     'hard_processing': ('sounds/hard_processing1.mp3',),
     'search': ('sounds/search1.mp3',),
-    'mechanical_movement': ('mechanical_movement1.mp3',)
+    'mechanical_movement': ('mechanical_movement1.mp3',),
+
+    'error': ('sounds/error1.mp3', 'sounds/error2.mp3', 'sounds/error3.mp3', 'sounds/error4.mp3', 'sounds/error5.mp3', 'sounds/error6.mp3',), # ПОНАСТАВЛЯТЬ ЗВУКИ
+    'lauch_vector_database': ('sounds/lauch_vector_database1.mp3',), 
+    'start_embedding_model': ('sounds/start_embedding_model1.mp3',), 
 }
 
 try:
