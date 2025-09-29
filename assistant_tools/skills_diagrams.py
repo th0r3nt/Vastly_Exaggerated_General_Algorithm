@@ -45,13 +45,29 @@ get_date_scheme = {
     },
 }
 
-
+ 
 make_screenshot_scheme = {
     "name": "make_screenshot",
     "description": "Takes a screenshot of the user's home screen and saves it to a file. Returns JSON with the path to the created file.",
     "parameters": {
         "type": "object",
         "properties": {}
+    },
+}
+
+
+save_to_memory_scheme = {
+    "name": "save_to_memory",
+    "description": "Saves a new fact or piece of information to Vega's long-term memory. Use this when the user provides important new information about themselves, their plans, projects, or asks you to remember something.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "The specific, concise fact to be saved. For example: 'The user's dog is named Rex.' or 'The user is working on a post-apocalyptic car combat game.'",
+            },
+        },
+        "required": ["text", "doc_id"]
     },
 }
 

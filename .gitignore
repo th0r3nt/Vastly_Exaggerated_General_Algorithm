@@ -19,3 +19,6 @@ venv/
 *.log
 
 TODO.md
+
+
+assistant_chroma_db

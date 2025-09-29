@@ -25,17 +25,28 @@ skills_registry = {"get_weather": assistant_tools.skills.get_weather,
                    "make_screenshot": assistant_tools.skills.make_screenshot} # 3. Указание, какой навык использовать
 
 def run_gemini_task(**kwargs):
-    text = kwargs.get('text')
+    query = kwargs.get('query')
+    database_context = kwargs.get('database_context')
     try:
         response = client.models.generate_content(
         model="gemini-2.5-flash-lite",
-        contents= VEGA_PERSONALITY_CORE + f"Right now, your task is to maintain a conversation. Don't deviate from your personality. \n\nUser request: {text}",
+        contents= VEGA_PERSONALITY_CORE + 
+
+        f"""Right now, your task is to maintain a conversation. 
+        Don't deviate from your personality. BE BRIEF! 
+
+        Here's the relevant information from your database (memory). Use it to provide the most complete answer. If the information is irrelevant, you can ignore it.
+        {database_context}
+
+        
+        User request: {query}
+        V.E.G.A: 
+        """,
         config=config,
         )
 
         function_call_found = False
         results_of_tool_calls = []
-
 
         for part in response.candidates[0].content.parts:
             if hasattr(part, 'function_call') and part.function_call is not None:
@@ -60,8 +71,6 @@ def run_gemini_task(**kwargs):
 
                 results_of_tool_calls.append(function_response_part)
 
-
-
         if function_call_found:
             final_response = client.models.generate_content(
                 model="gemini-2.5-flash-lite",
@@ -82,19 +91,29 @@ def run_gemini_task(**kwargs):
         print(f"[Brain] Error when addressing Gemini API: {e}")
 
 def generate_response(*args, **kwargs):
-    """Если появится событие USER_SPEECH - generate_response создаст отдельный поток размышлений мозга Gemini, чтобы не блокировать SpeechListener"""
-    text = kwargs.get('text')
-    if not text:
+    """Принимает данные от поисковика и запускает генерацию ответа в отдельном потоке."""
+    if not args:
+        return
+    
+    data_package = args[0] # Нужен весь словарь целиком
+    
+    # Когда у нас есть словарь, достаем из него данные по ключам
+    query = data_package.get('original_query')
+    database_context = data_package.get('database_context')
+
+    if not query:
         return
 
-    worker_thread = threading.Thread(target=run_gemini_task, kwargs={"text": text,}) # Создаем, собственно, отдельный поток
+    worker_thread = threading.Thread(
+        target=run_gemini_task, 
+        kwargs={"query": query, "database_context": database_context}
+    )
     worker_thread.start()
 
     print("\n[Brain] The task for Gemini has been sent to the background.")
 
 def initialize_brain():
-    subscribe("USER_SPEECH", generate_response)
-
+    subscribe("USER_SPEECH_AND_RECORDS_FOUND_IN_DB", generate_response)
 
 def generate_greetings():
     try:

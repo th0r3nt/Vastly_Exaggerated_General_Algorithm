@@ -42,11 +42,11 @@ class SpeechListener(threading.Thread):
                     # "Скармливаем" их распознавателю
                     if self.recognizer.AcceptWaveform(data):
                         result = self.recognizer.Result() # Если распознана полная фраза, получаем результат
-                        text = json.loads(result)["text"] # Извлекаем текст
+                        query = json.loads(result)["text"] # Извлекаем текст
 
                         # Если текст не пустой, кладем его в очередь команд
-                        if text:
-                            print(f"[Vosk] Recognized: {text}")
-                            publish("USER_SPEECH", text=text)
-                            logging.info(f"[Vosk] Recognized: {text}")
+                        if query:
+                            print(f"[Vosk] Recognized: {query}")
+                            publish("USER_SPEECH", query=query)
+                            logging.info(f"[Vosk] Recognized: {query}")
 

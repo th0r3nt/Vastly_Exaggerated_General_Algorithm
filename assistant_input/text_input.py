@@ -6,5 +6,5 @@ def text_input_loop():
     while True:
         command = input("\nEnter your query into the V.E.G.A. system: \n")
         if command:
-            publish("USER_SPEECH", text=command)
+            publish("USER_SPEECH", query=command)
             time.sleep(5)
