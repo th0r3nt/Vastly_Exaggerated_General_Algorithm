@@ -1,14 +1,14 @@
-# output.py
+# voice_output_eng.py
 import queue
 import threading
-import sounddevice as sd  # Возвращаем sounddevice
+import sounddevice as sd
 from kokoro import KPipeline
 from assistant_event_bus.event_bus import subscribe
 
 # Kokoro генерирует аудио с частотой 24000 Гц. Это важно указать.
 SAMPLE_RATE = 24000
 
-class SpeechModule:
+class SpeechModuleENG:
     """
     Класс, отвечающий за синтез и воспроизведение речи.
     Работает асинхронно через очередь и фоновый поток.

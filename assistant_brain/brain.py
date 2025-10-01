@@ -2,7 +2,7 @@
 import google.generativeai as genai
 from assistant_event_bus.event_bus import subscribe, publish
 import threading
-from assistant_general.config import VEGA_PERSONALITY_CORE
+from assistant_general.config import VEGA_PERSONALITY_CORE_ENGLISH, VEGA_PERSONALITY_CORE_RUSSIAN  # noqa: F401
 from assistant_tools.skills_diagrams import get_weather_scheme, search_in_google_scheme, get_date_scheme, get_time_scheme, make_screenshot_scheme, save_to_memory_scheme # 1. Импорт схемы нового инструмента
 from google import genai  # noqa: F811
 from google.genai import types
@@ -14,7 +14,8 @@ import json
 from collections import deque
 import datetime
 
-MODEL_GEMINI = "gemini-flash-lite-latest" # gemini-2.5-flash or gemini-2.5-flash-lite or gemini-flash-latest or gemini-flash-lite-latest...
+MODEL_GEMINI = "gemini-flash-latest" # gemini-2.5-flash or gemini-2.5-flash-lite or gemini-flash-latest or gemini-flash-lite-latest...
+VEGA_PERSONALITY_CORE = VEGA_PERSONALITY_CORE_RUSSIAN # либо ENGLISH в конце, либо RUSSIAN
 
 load_dotenv() # для загрузки API ключей из .env
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -31,7 +32,7 @@ skills_registry = {"get_weather": assistant_tools.skills.get_weather,
                    "save_to_memory": assistant_tools.skills.save_to_memory,} # 3. Указание, какой навык использовать
 
 SHORT_TERM_MEMORY_PATH = "assistant_brain/short_term_memory.json"
-MAX_MEMORY = 20 # Лимит кратковременной памяти
+MAX_MEMORY = 30 # Лимит кратковременной памяти
 
 try:
     with open(SHORT_TERM_MEMORY_PATH, 'r', encoding='utf-8') as f:
@@ -62,7 +63,7 @@ def run_gemini_task(**kwargs):
         contents= VEGA_PERSONALITY_CORE + 
 
         f"""Right now, your task is to maintain a conversation. 
-        Don't deviate from your personality. BE BRIEF! 
+        Don't deviate from your personality. BE BRIEF! Your name is feminine.
 
         Here's the relevant information from your database (memory). Use it to provide the most complete answer. If the information is irrelevant, you can ignore it.
         {database_context}
@@ -86,8 +87,8 @@ def run_gemini_task(**kwargs):
             if hasattr(part, 'function_call') and part.function_call is not None:
                 function_call = part.function_call
 
-                print(f"Function to call: {function_call.name}")
-                print(f"Arguments: {function_call.args}")
+                print(f"\nFunction to call: {function_call.name}")
+                print(f"Arguments: {function_call.args}\n")
 
                 function_call_found = True
 
@@ -168,7 +169,7 @@ def generate_greetings():
         Your task is to greet the user. Your greeting SHOULD be as personalized as possible and include a witty or sarcastic comment on any issue: 
         whether it's the frequency of data posting, for example, if the last post was very recent (less than 5 minutes), or an unusual time. 
         Alternatively, you can use context from previous conversations. If such a sarcastic comment doesn't work, greet the user normally. 
-        Keep the tone brief, businesslike, and sarcastic, similar to Jarvis.
+        Keep the tone brief, businesslike, and sarcastic, similar to Jarvis. Your name is feminine.
         """,
         config=config,
         )
