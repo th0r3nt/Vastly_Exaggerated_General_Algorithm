@@ -1,11 +1,10 @@
 # inspect_memory.py
-
 import chromadb
 
 client = chromadb.PersistentClient(path="assistant_chroma_db") 
 
 try:
-    collection_name = "assistant_database"  # <-- ЗАМЕНИТЕ НА ИМЯ ВАШЕЙ КОЛЛЕКЦИИ
+    collection_name = "assistant_database"
     collection = client.get_collection(name=collection_name)
     print(f"Successfully connected to collection: '{collection_name}'")
 
@@ -20,7 +19,7 @@ try:
     )
 
     num_records = len(all_records['ids'])
-    print(f"\n--- Found {num_records} records in V.E.G.A.'s memory ---\n")
+    print(f"\n--- Found {num_records} records in V.E.G.A. memory ---\n")
 
     for i in range(num_records):
         record_id = all_records['ids'][i]

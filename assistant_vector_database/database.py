@@ -5,6 +5,7 @@ from langchain_chroma import Chroma
 from datetime import datetime
 from assistant_event_bus.event_bus import subscribe, publish
 import uuid
+from assistant_general import general_settings as general_settings
 
 # Эмбеддинг модель, чтобы превращать запросы пользователя в векторы и искать похожие в базе данных
 print("Initialization of the embedding model.")
@@ -48,46 +49,49 @@ def find_records_in_database(**kwargs):
     if not query:
         return
 
-    result_DB = vectorstore.similarity_search(query, k=3)
+    results_with_scores = vectorstore.similarity_search_with_score(query, k=general_settings.NUM_RECORDS_FROM_DATABASE)
 
     # Если база пуста
-    if not result_DB:
+    if not results_with_scores:
         result = {"original_query": query, "database_context": "No relevant records were found in the database."}
         print("No relevant records were found in the database.")
         publish("USER_SPEECH_AND_RECORDS_FOUND_IN_DB", result)
         return 
+    
 
     formatted_lines = []
+
+    print("\nSearching for records in the database:")
     
-    for document in result_DB:
-        # Извлекаем дату (которая у вас является ID) из метаданных
+    for document, score in results_with_scores:
+        if score <= general_settings.SIMILARITY_THRESHOLD:
+            # Если запись ДОСТАТОЧНО похожа, обрабатываем ее
+            print(f"Record is relevant enough (score: {score:.2f}, threshold: {general_settings.SIMILARITY_THRESHOLD})")
+            
+            date = document.metadata.get('creation_date', 'Date not found')
+            text = document.page_content
+            
+            # Добавим оценку в вывод для наглядности
+            formatted_lines.append(f"[Score: {score:.2f}] {date}: {text}")
+        else:
+            # Если запись НЕдостаточно похожа, мы можем ее проигнорировать
+            print(f"Record is NOT relevant enough (score: {score:.2f}, threshold: {general_settings.SIMILARITY_THRESHOLD}). Skipping.")
+            # Мы можем либо ничего не делать, либо добавить сообщение об этом
+            # formatted_lines.append(f"[Not relevant enough, score: {score:.2f}]") 
 
-        date = document.metadata.get('creation_date', 'Date not found') # Используем .get(), чтобы избежать ошибки, если вдруг 'id' не найдется
-        
-        # Извлекаем текст записи
-        text = document.page_content
-        
-        formatted_lines.append(f"{date}: {text}")
-
-    # Выводим красивый, отформатированный результат
-    final_string = "\n".join(formatted_lines)
+    # Если после фильтрации не осталось релевантных записей
+    if not formatted_lines:
+        final_string = "Found some records, but none were similar enough to the query."
+    else:
+        # Соединяем только релевантные строки
+        final_string = "\n".join(formatted_lines)
 
     result = {"original_query": query, "database_context": final_string}
-    print(f"Found records in database: \n{final_string}")
+    print(f"\nFound records in database for query '{query}': \n{final_string}")
     
     publish("USER_SPEECH_AND_RECORDS_FOUND_IN_DB", result)
 
 
 def initialize_database():
     subscribe("USER_SPEECH", find_records_in_database)
-
-
-
-
-
-
-
-
-
-
 

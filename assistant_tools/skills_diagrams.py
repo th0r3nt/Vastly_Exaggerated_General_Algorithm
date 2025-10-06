@@ -45,7 +45,7 @@ get_date_scheme = {
     },
 }
 
- 
+
 make_screenshot_scheme = {
     "name": "make_screenshot",
     "description": "Takes a screenshot of the user's home screen and saves it to a file. Returns JSON with the path to the created file.",
@@ -54,7 +54,6 @@ make_screenshot_scheme = {
         "properties": {}
     },
 }
-
 
 save_to_memory_scheme = {
     "name": "save_to_memory",
@@ -68,6 +67,15 @@ save_to_memory_scheme = {
             },
         },
         "required": ["text"]
+    },
+}
+
+lock_pc_scheme = {
+    "name": "lock_pc",
+    "description": "Locks the user's workstation.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
     },
 }
 

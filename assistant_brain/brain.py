@@ -1,52 +1,67 @@
 # brain.py
 import google.generativeai as genai
-from assistant_event_bus.event_bus import subscribe, publish
-import threading
-from assistant_general.config import VEGA_PERSONALITY_CORE_ENGLISH, VEGA_PERSONALITY_CORE_RUSSIAN  # noqa: F401
-from assistant_tools.skills_diagrams import get_weather_scheme, search_in_google_scheme, get_date_scheme, get_time_scheme, make_screenshot_scheme, save_to_memory_scheme # 1. Импорт схемы нового инструмента
 from google import genai  # noqa: F811
 from google.genai import types
-import assistant_tools.skills
-from assistant_tools.utils import play_sfx
+import threading
 import os
-from dotenv import load_dotenv
 import json
-from collections import deque
 import datetime
-
-MODEL_GEMINI = "gemini-flash-latest" # gemini-2.5-flash or gemini-2.5-flash-lite or gemini-flash-latest or gemini-flash-lite-latest...
-VEGA_PERSONALITY_CORE = VEGA_PERSONALITY_CORE_RUSSIAN # либо ENGLISH в конце, либо RUSSIAN
+from collections import deque
+from dotenv import load_dotenv
+from assistant_event_bus.event_bus import subscribe, publish
+from assistant_tools.skills_diagrams import get_weather_scheme, search_in_google_scheme, get_date_scheme, get_time_scheme, make_screenshot_scheme, save_to_memory_scheme, lock_pc_scheme # 1. Импорт схемы нового инструмента
+from assistant_tools.music_skills_diagrams import music_play_random_scheme, music_pause_playback_scheme, music_resume_playback_scheme, music_play_next_track_scheme, music_play_previous_track_scheme, music_clear_playlist_scheme, music_play_playlist_scheme, music_play_track_scheme
+import assistant_tools.skills
+import assistant_tools.music_skills
+from assistant_tools.utils import play_sfx
+import assistant_general.general_settings as general_settings
 
 load_dotenv() # для загрузки API ключей из .env
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
-tools = types.Tool(function_declarations=[get_weather_scheme, search_in_google_scheme, get_date_scheme, get_time_scheme, make_screenshot_scheme, save_to_memory_scheme]) # 2. Регистрация json-схемы нового инструмента
+tools = types.Tool(function_declarations=
+[get_weather_scheme, search_in_google_scheme, get_date_scheme, 
+get_time_scheme, make_screenshot_scheme, save_to_memory_scheme, 
+lock_pc_scheme, music_play_random_scheme, music_pause_playback_scheme, 
+music_resume_playback_scheme, music_play_next_track_scheme, music_play_previous_track_scheme, 
+music_clear_playlist_scheme, music_play_playlist_scheme, music_play_track_scheme
+]) # 2. Регистрация json-схемы нового инструмента
+
 config = types.GenerateContentConfig(tools=[tools])
 
-skills_registry = {"get_weather": assistant_tools.skills.get_weather,
+skills_registry = {"get_weather": assistant_tools.skills.get_weather, # Правильные ключи брать из файла skills_diagrams.py по ключу "name"
                    "search_in_google": assistant_tools.skills.search_in_google,
                    "get_date": assistant_tools.skills.get_date,
                    "get_time": assistant_tools.skills.get_time,
                    "make_screenshot": assistant_tools.skills.make_screenshot,
-                   "save_to_memory": assistant_tools.skills.save_to_memory,} # 3. Указание, какой навык использовать
+                   "save_to_memory": assistant_tools.skills.save_to_memory,
+                   "lock_pc": assistant_tools.skills.lock_pc,
 
-SHORT_TERM_MEMORY_PATH = "assistant_brain/short_term_memory.json"
-MAX_MEMORY = 30 # Лимит кратковременной памяти
+                   # Навыки, связанные с музыкой
+                   "music_play_random": assistant_tools.music_skills.music_play_random,
+                   "music_pause_playback": assistant_tools.music_skills.music_pause_playback,
+                   "music_resume_playback": assistant_tools.music_skills.music_resume_playback,
+                   "music_play_next_track": assistant_tools.music_skills.music_play_next_track,
+                   "music_play_previous_track": assistant_tools.music_skills.music_play_previous_track,
+                   "music_clear_playlist": assistant_tools.music_skills.music_clear_playlist,
+                   "music_play_playlist": assistant_tools.music_skills.music_play_playlist,
+                   "music_play_track": assistant_tools.music_skills.music_play_track,
+                   } # 3. Указание, какой навык использовать
 
 try:
-    with open(SHORT_TERM_MEMORY_PATH, 'r', encoding='utf-8') as f:
+    with open(general_settings.SHORT_TERM_MEMORY_PATH, 'r', encoding='utf-8') as f:
         short_term_memory = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
-    print("Файла 'short_time_memory.ison' не существует. Создается новый в папку 'assistant_brain'.")
+    print("Файла 'short_time_memory.ison' либо не существует, либо неверного формата. Создается новый в папку 'assistant_brain'.")
     # Если файла нет или он испорчен
     short_term_memory = []
 
 def save_memory():
-    with open(SHORT_TERM_MEMORY_PATH, 'w', encoding='utf-8') as f:
+    with open(general_settings.SHORT_TERM_MEMORY_PATH, 'w', encoding='utf-8') as f:
         json.dump(list(short_term_memory), f, indent=4, ensure_ascii=False) # ensure_ascii чтобы русский текст от пользователя записывался корректно
 
-short_term_memory = deque(short_term_memory, maxlen=MAX_MEMORY) # Применяем deque к загруженному списку, чтобы снова включить лимит
+short_term_memory = deque(short_term_memory, maxlen=general_settings.MAX_MEMORY) # Применяем deque к загруженному списку, чтобы снова включить лимит
 
 def process_interaction(query, final_text_to_publish):
     current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -59,8 +74,8 @@ def run_gemini_task(**kwargs):
     database_context = kwargs.get('database_context')
     try:
         response = client.models.generate_content(
-        model=MODEL_GEMINI,
-        contents= VEGA_PERSONALITY_CORE + 
+        model=general_settings.MODEL_GEMINI,
+        contents=general_settings.VEGA_PERSONALITY_CORE + 
 
         f"""Right now, your task is to maintain a conversation. 
         Don't deviate from your personality. BE BRIEF! Your name is feminine.
@@ -108,8 +123,8 @@ def run_gemini_task(**kwargs):
 
         if function_call_found:
             final_response = client.models.generate_content(
-                model=MODEL_GEMINI,
-                contents=[VEGA_PERSONALITY_CORE, history, *results_of_tool_calls], # оператор распоковки списка - args звездочка нужна, чтобы не было списка внутри списка (по типу [ <ответ про погоду>, <ответ про дату> ])
+                model=general_settings.MODEL_GEMINI,
+                contents=[general_settings.VEGA_PERSONALITY_CORE, history, *results_of_tool_calls], # оператор распоковки списка - args звездочка нужна, чтобы не было списка внутри списка (по типу [ <ответ про погоду>, <ответ про дату> ])
                 config=config,
             )
 
@@ -122,7 +137,7 @@ def run_gemini_task(**kwargs):
         publish("GEMINI_RESPONSE", text=final_text_to_publish)
         process_interaction(query, final_text_to_publish) # Сохранение в кратковременную память
 
-    except Exception as e:
+    except ConnectionError as e:
         print(f"Error when addressing Gemini API: {e}")
 
 def generate_response(*args, **kwargs):
@@ -158,8 +173,8 @@ def generate_greetings():
 
     try:
         response = client.models.generate_content(
-        model=MODEL_GEMINI,
-        contents= VEGA_PERSONALITY_CORE + f"""
+        model=general_settings.MODEL_GEMINI,
+        contents=general_settings.VEGA_PERSONALITY_CORE + f"""
         Here's the previous dialogue (useful for context):
         {short_term_memory}
 

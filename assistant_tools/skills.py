@@ -6,6 +6,12 @@ import pyautogui
 import os
 from dotenv import load_dotenv
 from assistant_vector_database.database import add_new_memory
+import ctypes
+import platform
+
+# ДЛЯ РЕГИСТРАЦИИ НОВЫХ НАВЫКОВ В ВЕГУ НУЖНО:
+# Написать json схему в skills_diagrams.py
+# Перейти в brain и следовать инструкциям, которые описаны вначале файла
 
 load_dotenv() # для загрузки API ключей из .env
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
@@ -58,9 +64,23 @@ def make_screenshot():
         screenshot = pyautogui.screenshot(filename)  
         screenshot.save(filename)  
         return {"status": "success", "file_path": os.path.abspath(filename)}
+    
     except Exception as e:
         return {"status": "error", "message": str(e)}
     
 def save_to_memory(text):
-    """Сохраняет в память любой факт о пользователе"""
+    """Сохраняет в память любой факт о пользователе."""
     add_new_memory(text)
+    return "Record save to memory."
+
+def lock_pc():
+    """Блокирует рабочую станцию Windows."""
+    if platform.system() == "Windows":
+        try:
+            ctypes.windll.user32.LockWorkStation()
+            return "The workstation is locked"
+        except Exception as e:
+            return f"Unable to lock workstation. Error: {e}"
+    else:
+        # Если Вега запустится на Linux или macOS в будущем
+        return "The command only works on the Windows operating system."

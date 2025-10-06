@@ -8,6 +8,8 @@ from assistant_event_bus.event_bus import subscribe
 # Kokoro генерирует аудио с частотой 24000 Гц. Это важно указать.
 SAMPLE_RATE = 24000
 
+SAMPLE_RATE = 24000
+
 class SpeechModuleENG:
     """
     Класс, отвечающий за синтез и воспроизведение речи.
