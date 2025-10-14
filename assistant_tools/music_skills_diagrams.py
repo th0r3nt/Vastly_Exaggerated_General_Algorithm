@@ -72,19 +72,23 @@ music_play_playlist_scheme = {
 
 music_play_track_scheme = {
     "name": "music_play_track",
-    "description": "Searches for a specific track by title and/or artist name and plays it. You can use just the title, just the artist (to search any track), or both for a more precise search.",
+    "description": (
+        "Finds and plays a track from the user's local music library. "
+        "The library contains artists such as Slipknot, Slayer, ACDC and composers such as Pawel Blaszczak. "
+        "The function uses fuzzy search, so it can correct typos in the query. "
+        "Use when the user requests to play a specific song."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
             "track_name": {
                 "type": "string",
-                "description": "Song title. Examples: 'Custer', 'Bohemian Rhapsody'",
+                "description": "Song title. May contain typos. For example: 'caster', 'Psichosal'",
             },
             "artist_name": {
                 "type": "string",
-                "description": "The name of the artist or band. For example: 'Slipknot', 'Slayer'",
+                "description": "The artist's name. This may not be specified. For example: 'Slipknot'",
             },
         },
-        # Required здесь не ставим, так как функция может работать хотя бы с одним из параметров
     },
 }

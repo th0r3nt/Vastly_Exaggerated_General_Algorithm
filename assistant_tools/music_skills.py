@@ -2,7 +2,9 @@
 import subprocess
 import os
 import random
+from fuzzywuzzy import process
 from assistant_general.general_settings import FOOBAR_PATH, MUSIC_LIBRARY_PATH, SILENT_TRACK_PATH
+
 
 # ЧТОБЫ СОЗДАВАЛСЯ НОВЫЙ ПЛЕЙЛИСТ В КОДЕ, НАДО:
 # НАПИСАТЬ СНАЧАЛА success = _send_foobar_command(['/add', random_track_path]), А УЖЕ ПОТОМ
@@ -29,8 +31,6 @@ def _current_tracks():
 
     for root, dirs, files in os.walk(MUSIC_LIBRARY_PATH): # Рекурсивно обходим всю музыкальную библиотеку
         for filename in files: # Проходимся по файлам
-            if not filename.lower().endswith(('.mp3', '.flac', '.wav', '.ogg', '.m4a')):
-                continue
 
             full_path = os.path.join(root, filename)
             
@@ -40,53 +40,38 @@ def _current_tracks():
 
 ALL_TRACKS_CACHE = _current_tracks() # Получает все файлы из музыкальной библиотеки и пути к ним
 
+def _find_best_track_path(query: str, all_tracks_paths: list, score_cutoff=80):
+    """Ищет наиболее похожее название трека в кеше и возвращает ПОЛНЫЙ ПУТЬ."""
+    track_map = {os.path.splitext(os.path.basename(path))[0]: path for path in all_tracks_paths}
+    best_match = process.extractOne(query, track_map.keys())
+    if best_match and best_match[1] >= score_cutoff:
+        return track_map[best_match[0]]
+    return None
+
 def music_play_track(track_name: str = None, artist_name: str = None):
-    """Ищет трек и немедленно начинает его воспроизведение, удаляя текущий плейлист и создавая новый."""
+    """Ищет наиболее похожий трек и воспроизводит его."""
     if not track_name and not artist_name:
-        return "You must specify the name of the track and/or artist."
+        return "Необходимо указать название трека или имя исполнителя."
 
-    print(f"Searching for track: [Artist: {artist_name or 'Any'}, Title: {track_name or 'Any'}]")
-    found_path = None
+    # Собираем единый поисковый запрос
+    search_query = f"{artist_name or ''} {track_name or ''}".strip()
     
-    for root, dirs, files in os.walk(MUSIC_LIBRARY_PATH):
-        for filename in files:
-            full_path = os.path.join(root, filename)
-            
-            artist_match = True
-            track_match = True
-
-            if artist_name and artist_name.lower() not in full_path.lower():
-                artist_match = False
-            
-            if track_name and track_name.lower() not in filename.lower():
-                track_match = False
-            
-            if artist_match and track_match:
-                found_path = full_path
-                break
-        
-        if found_path:
-            break
+    found_path = _find_best_track_path(search_query, ALL_TRACKS_CACHE)
 
     if found_path:
-        print(f"Track is found: {found_path}")
-
-        success_add = _send_foobar_command(['/add', found_path])
-        if success_add:
-            success_play = _send_foobar_command(['/play', found_path])
-            if success_play:
-                clean_name = os.path.splitext(os.path.basename(found_path))[0]
-                return f"Play: {clean_name}"
-        
-        return "Unable to start playback in Foobar2000."
+        print(f"Наилучшее совпадение: {found_path}")
+        # Твой проверенный способ запуска
+        _send_foobar_command(['/add', found_path])
+        _send_foobar_command(['/play', found_path])
+        clean_name = os.path.splitext(os.path.basename(found_path))[0]
+        return f"Play: {clean_name}"
     else:
-        print("Track not found in the entire library.")
-        return "Track not found in library."
+        return f"Track similar to '{search_query}' not found in the library."
     
 def music_play_playlist(playlist_name: str):
     """Ищет папку по имени, очищает старый плейлист, добавляет все треки из папки и начинает играть."""
     if not playlist_name:
-        return "Необходимо указать название плейлиста."
+        return "Must specify a playlist name."
 
     playlist_path = None
     try:
@@ -131,7 +116,7 @@ def music_play_random():
     success = _send_foobar_command(['/play', random_track_path])
     
     if success:
-        return f"Random track included: {clean_name}"
+        return f"Random track played: {clean_name}"
     else:
         return "Failed to start playing random track."
 
@@ -177,3 +162,18 @@ def music_clear_playlist():
         return "Playlist cleared."
     else:
         return "Failed to clear playlist."
+
+
+if __name__ == "__main__":
+    # Тесты
+    import time
+    music_play_track("horizon")
+    time.sleep(7)
+    music_play_track("мозговой протез")
+    time.sleep(7)
+    music_play_playlist("slipknot")
+    time.sleep(7)
+    music_play_next_track()
+    music_play_next_track()
+    time.sleep(7)
+    music_pause_playback()

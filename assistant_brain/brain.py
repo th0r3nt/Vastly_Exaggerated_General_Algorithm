@@ -9,45 +9,16 @@ import datetime
 from collections import deque
 from dotenv import load_dotenv
 from assistant_event_bus.event_bus import subscribe, publish
-from assistant_tools.skills_diagrams import get_weather_scheme, search_in_google_scheme, get_date_scheme, get_time_scheme, make_screenshot_scheme, save_to_memory_scheme, lock_pc_scheme # 1. Импорт схемы нового инструмента
-from assistant_tools.music_skills_diagrams import music_play_random_scheme, music_pause_playback_scheme, music_resume_playback_scheme, music_play_next_track_scheme, music_play_previous_track_scheme, music_clear_playlist_scheme, music_play_playlist_scheme, music_play_track_scheme
-import assistant_tools.skills
-import assistant_tools.music_skills
 from assistant_tools.utils import play_sfx
 import assistant_general.general_settings as general_settings
+from added_skills import function_declarations, skills_registry # ДОБАВЛЯТЬ НОВЫЕ УМЕНИЯ В ЭТОТ ФАЙЛ
 
 load_dotenv() # для загрузки API ключей из .env
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
-tools = types.Tool(function_declarations=
-[get_weather_scheme, search_in_google_scheme, get_date_scheme, 
-get_time_scheme, make_screenshot_scheme, save_to_memory_scheme, 
-lock_pc_scheme, music_play_random_scheme, music_pause_playback_scheme, 
-music_resume_playback_scheme, music_play_next_track_scheme, music_play_previous_track_scheme, 
-music_clear_playlist_scheme, music_play_playlist_scheme, music_play_track_scheme
-]) # 2. Регистрация json-схемы нового инструмента
-
+tools = types.Tool(function_declarations=function_declarations)
 config = types.GenerateContentConfig(tools=[tools])
-
-skills_registry = {"get_weather": assistant_tools.skills.get_weather, # Правильные ключи брать из файла skills_diagrams.py по ключу "name"
-                   "search_in_google": assistant_tools.skills.search_in_google,
-                   "get_date": assistant_tools.skills.get_date,
-                   "get_time": assistant_tools.skills.get_time,
-                   "make_screenshot": assistant_tools.skills.make_screenshot,
-                   "save_to_memory": assistant_tools.skills.save_to_memory,
-                   "lock_pc": assistant_tools.skills.lock_pc,
-
-                   # Навыки, связанные с музыкой
-                   "music_play_random": assistant_tools.music_skills.music_play_random,
-                   "music_pause_playback": assistant_tools.music_skills.music_pause_playback,
-                   "music_resume_playback": assistant_tools.music_skills.music_resume_playback,
-                   "music_play_next_track": assistant_tools.music_skills.music_play_next_track,
-                   "music_play_previous_track": assistant_tools.music_skills.music_play_previous_track,
-                   "music_clear_playlist": assistant_tools.music_skills.music_clear_playlist,
-                   "music_play_playlist": assistant_tools.music_skills.music_play_playlist,
-                   "music_play_track": assistant_tools.music_skills.music_play_track,
-                   } # 3. Указание, какой навык использовать
 
 try:
     with open(general_settings.SHORT_TERM_MEMORY_PATH, 'r', encoding='utf-8') as f:

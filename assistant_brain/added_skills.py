@@ -1,0 +1,66 @@
+# added_skills.py
+
+# 1. ИМПОРТ СХЕМЫ НОВОГО ИНСТРУМЕНТА
+from assistant_tools.skills_diagrams import (
+    get_weather_scheme, search_in_google_scheme, get_date_scheme, get_time_scheme, make_screenshot_scheme, save_to_memory_scheme, lock_pc_scheme,
+    get_windows_layout_scheme, move_mouse_scheme, current_mouse_coordinates_scheme, click_mouse_scheme, scroll_mouse_scheme, drag_mouse_scheme,
+    press_hotkey_scheme, copy_to_clipboard_scheme, write_text_scheme, system_command_scheme, get_filtered_processes_scheme, currently_open_windows_scheme,
+    manage_window_scheme, open_program_scheme, kill_process_by_name_scheme,
+)
+from assistant_tools.music_skills_diagrams import (
+    music_play_random_scheme, music_pause_playback_scheme, music_resume_playback_scheme, music_play_next_track_scheme,
+    music_play_previous_track_scheme, music_clear_playlist_scheme, music_play_playlist_scheme, music_play_track_scheme,
+)
+
+import assistant_tools.skills
+import assistant_tools.music_skills
+
+# 2. РЕГИСТРАЦИЯ JSON-СХЕМЫ НОВОГО ИНСТРУМЕНТА ДЛЯ FUNCTION CALLING НЕЙРОСЕТИ (Чтобы нейросеть читала описание навыков и могла понимать, что и с какими параметрами вызывать навыки)
+function_declarations = [
+    get_weather_scheme, search_in_google_scheme, get_date_scheme, get_time_scheme, make_screenshot_scheme, save_to_memory_scheme, lock_pc_scheme,
+    get_windows_layout_scheme, move_mouse_scheme, current_mouse_coordinates_scheme, click_mouse_scheme, scroll_mouse_scheme, drag_mouse_scheme,
+    press_hotkey_scheme, copy_to_clipboard_scheme, write_text_scheme, system_command_scheme, get_filtered_processes_scheme, currently_open_windows_scheme,
+    manage_window_scheme, open_program_scheme, kill_process_by_name_scheme,
+    music_play_random_scheme, music_pause_playback_scheme, music_resume_playback_scheme, music_play_next_track_scheme,
+    music_play_previous_track_scheme, music_clear_playlist_scheme, music_play_playlist_scheme, music_play_track_scheme
+]
+
+# 3. УКАЗАНИЕ, КАКОЙ НАВЫК ИСПОЛЬЗОВАТЬ (НЕЙРОСЕТЬ БУДЕТ ВЫЗЫВАТЬ КЛЮЧИ (возможно также будет передавать что-либо), И В ДАННОМ СЛУЧАЕ ЗНАЧЕНИЕ КЛЮЧА АКТИВИРУЕТ СООВЕТСТВУЮЩИЙ НАВЫК ДЛЯ ЭТОГО КЛЮЧА)
+skills_registry = {
+    "get_weather": assistant_tools.skills.get_weather, # Правильные ключи брать из файла skills_diagrams.py по ключу "name"
+    "search_in_google": assistant_tools.skills.search_in_google,
+    "get_date": assistant_tools.skills.get_date,
+    "get_time": assistant_tools.skills.get_time,
+    "make_screenshot": assistant_tools.skills.make_screenshot,
+    "save_to_memory": assistant_tools.skills.save_to_memory,
+    "lock_pc": assistant_tools.skills.lock_pc,
+
+    # НАВЫКИ, КОТОРЫЕ УПРАВЛЯЮТ МЫШЬЮ И КЛАВИАТУРОЙ
+    "get_windows_layout": assistant_tools.skills.get_windows_layout, 
+    "move_mouse": assistant_tools.skills.move_mouse, 
+    "current_mouse_coordinates": assistant_tools.skills.current_mouse_coordinates, 
+    "click_mouse": assistant_tools.skills.click_mouse,
+    "scroll_mouse": assistant_tools.skills.scroll_mouse, 
+    "drag_mouse": assistant_tools.skills.drag_mouse, 
+    "press_hotkey": assistant_tools.skills.press_hotkey,
+    "copy_to_clipboard": assistant_tools.skills.copy_to_clipboard,
+    "write_text": assistant_tools.skills.write_text,
+    "system_command": assistant_tools.skills.system_command,
+
+    # НАВЫКИ, СВЯЗАННЫЕ С ВЗАИМОДЕЙСТВИЕМ С ПРИЛОЖЕНИЯМИ И ОКНАМИ
+    "get_filtered_processes": assistant_tools.skills.get_filtered_processes,
+    "currently_open_windows": assistant_tools.skills.currently_open_windows,
+    "manage_window": assistant_tools.skills.manage_window,
+    "open_program": assistant_tools.skills.open_program,
+    "kill_process_by_name": assistant_tools.skills.kill_process_by_name,
+
+    # НАВЫКИ, СВЯЗАННЫЕ С МУЗЫКОЙ ИЗ FOOBAR2000
+    "music_play_random": assistant_tools.music_skills.music_play_random,
+    "music_pause_playback": assistant_tools.music_skills.music_pause_playback,
+    "music_resume_playback": assistant_tools.music_skills.music_resume_playback,
+    "music_play_next_track": assistant_tools.music_skills.music_play_next_track,
+    "music_play_previous_track": assistant_tools.music_skills.music_play_previous_track,
+    "music_clear_playlist": assistant_tools.music_skills.music_clear_playlist,
+    "music_play_playlist": assistant_tools.music_skills.music_play_playlist,
+    "music_play_track": assistant_tools.music_skills.music_play_track
+}

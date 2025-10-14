@@ -80,3 +80,222 @@ lock_pc_scheme = {
 }
 
 
+get_windows_layout_scheme = {
+    "name": "get_windows_layout",
+    "description": "Returns the current keyboard layout in Windows. Returns a string such as 'ENG', 'RUS', and so on.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    },
+}
+
+move_mouse_scheme = {
+    "name": "move_mouse",
+    "description": "Moves the mouse cursor to the specified X and Y coordinates on the screen.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "x": {
+                "type": "integer",
+                "description": "The X-coordinate to move the mouse to."
+            },
+            "y": {
+                "type": "integer",
+                "description": "The Y-coordinate to move the mouse to."
+            }
+        },
+        "required": ["x", "y"]
+    }
+}
+
+current_mouse_coordinates_scheme = {
+    "name": "current_mouse_coordinates",
+    "description": "Gets the current X and Y coordinates of the mouse cursor.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    }
+}
+
+click_mouse_scheme = {
+    "name": "click_mouse",
+    "description": "Performs a mouse click. Can be left, right, middle, single, double, etc.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "button": {
+                "type": "string",
+                "description": "The mouse button to click: 'left', 'right', or 'middle'. Default is 'left'."
+            },
+            "clicks": {
+                "type": "integer",
+                "description": "The number of times to click. Default is 1."
+            }
+        }
+    }
+}
+
+scroll_mouse_scheme = {
+    "name": "scroll_mouse",
+    "description": "Scrolls the mouse wheel up or down.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "amount": {
+                "type": "integer",
+                "description": "The number of units to scroll. Positive for up, negative for down."
+            }
+        },
+        "required": ["amount"]
+    }
+}
+
+drag_mouse_scheme = {
+    "name": "drag_mouse",
+    "description": "Drags the mouse from its current position to the specified X and Y coordinates. Useful for selecting text or moving items.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "x_to": {
+                "type": "integer",
+                "description": "The destination X-coordinate for the drag."
+            },
+            "y_to": {
+                "type": "integer",
+                "description": "The destination Y-coordinate for the drag."
+            }
+        },
+        "required": ["x_to", "y_to"]
+    }
+}
+
+press_hotkey_scheme = {
+    "name": "press_hotkey",
+    "description": "Presses a combination of keyboard keys simultaneously. For example, ('ctrl', 'c') to copy.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "keys": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "A list of keys to press together, for example: ['alt', 'f4']"
+            }
+        },
+        "required": ["keys"]
+    }
+}
+
+copy_to_clipboard_scheme = {
+    "name": "copy_to_clipboard",
+    "description": "Copies the given text to the system clipboard.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "The text to be copied."
+            }
+        },
+        "required": ["text"]
+    }
+}
+
+write_text_scheme = {
+    "name": "write_text",
+    "description": "Types out the given text in the currently active window. Works with any language.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "The text to be typed."
+            }
+        },
+        "required": ["text"]
+    }
+}
+
+system_command_scheme = {
+    "name": "system_command",
+    "description": "Executes a system command, such as shutdown or restart. EXTREMELY DANGEROUS.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "description": "The system command to execute. For Windows: 'shutdown /s /t 1' for shutdown, 'shutdown /r /t 1' for restart."
+            }
+        },
+        "required": ["command"]
+    }
+}
+
+get_filtered_processes_scheme = {
+    "name": "get_filtered_processes",
+    "description": "Returns a clean list of user-run applications, filtering out system processes.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    }
+}
+
+currently_open_windows_scheme = {
+    "name": "currently_open_windows",
+    "description": "Returns a list of titles of all currently open windows.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    }
+}
+
+manage_window_scheme = {
+    "name": "manage_window",
+    "description": "Finds a window by its title and performs an action on it.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "The title (or part of the title) of the window to manage. For example: 'foobar2000'."
+            },
+            "action": {
+                "type": "string",
+                "description": "The action to perform: 'activate', 'minimize', 'maximize', or 'close'. Default is 'activate'."
+            }
+        },
+        "required": ["title"]
+    }
+}
+
+open_program_scheme = {
+    "name": "open_program",
+    "description": "Opens a program or file using its full path.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path_to_exe": {
+                "type": "string",
+                "description": "The full path to the executable or file to open. For example: 'C:\\Program Files\\...\\chrome.exe'."
+            }
+        },
+        "required": ["path_to_exe"]
+    }
+}
+
+
+kill_process_by_name_scheme = {
+    "name": "kill_process_by_name",
+    "description": "Forcibly terminates a running process by its name (e.g., 'chrome.exe'). DANGEROUS.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "process_name": {
+                "type": "string",
+                "description": "The name of the process executable to kill."
+            }
+        },
+        "required": ["process_name"]
+    }
+}

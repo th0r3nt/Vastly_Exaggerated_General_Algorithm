@@ -10,7 +10,7 @@ SIMILARITY_THRESHOLD = 0.9 # Порог схожести для поиска з�
 # 1.00 - Для записей с некоторыми упущениями (возможными)
 
 # ДЛЯ brain.py
-MODEL_GEMINI = "gemini-flash-lite-latest" # gemini-2.5-flash or gemini-2.5-flash-lite or gemini-flash-latest or gemini-flash-lite-latest...
+MODEL_GEMINI = "gemini-2.5-flash" # gemini-2.5-flash or gemini-2.5-flash-lite or gemini-flash-latest or gemini-flash-lite-latest...
 VEGA_PERSONALITY_CORE = VEGA_PERSONALITY_CORE_RUSSIAN # либо ENGLISH в конце, либо RUSSIAN
 SHORT_TERM_MEMORY_PATH = "assistant_brain/short_term_memory.json"
 MAX_MEMORY = 26 # Лимит кратковременной памяти
