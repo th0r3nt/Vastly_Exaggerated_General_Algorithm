@@ -10,11 +10,16 @@ import platform
 import pyperclip
 import pygetwindow as gw
 import psutil
-import os
 import keyboard
 import logging
+from ctypes import cast, POINTER
+from comtypes import CLSCTX_ALL
+import pythoncom
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from assistant_general.logger_config import setup_logger
 from assistant_vector_database.database import add_new_memory
+from bs4 import BeautifulSoup
+import wmi
 
 setup_logger()
 logger = logging.getLogger(__name__)
@@ -23,6 +28,7 @@ load_dotenv() # для загрузки API ключей из .env
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 WEATHER_CITY_LAT = os.getenv("WEATHER_CITY_LAT")
 WEATHER_CITY_LON = os.getenv("WEATHER_CITY_LON")
+OPENHARDWAREMONITOR_PATH = os.getenv("OPENHARDWAREMONITOR_PATH")
 
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
 
@@ -47,8 +53,8 @@ def get_weather(city_name: str = None):
     wind = weather_data["wind"]["speed"] # Скорость ветра, например, 4.64
     sity_name = weather_data["name"]
 
-    final_answer = f"City: {sity_name}; \nWeather description: {weather_description}; \nFeels like: {description_of_feeling_temp}°; \n Actual temperature: {description_of_temp}°; \n Air humidity: {humidity}; \n Wind: {wind} m/s."
-    print(final_answer)
+    final_answer = f"City: {sity_name}; Weather description: {weather_description}; Feels like: {description_of_feeling_temp}°; Actual temperature: {description_of_temp}°; Air humidity: {humidity}; Wind: {wind} m/s."
+    logger.debug(final_answer)
     return final_answer
 
 def search_in_google(search_query: str) -> str:
@@ -101,7 +107,188 @@ def lock_pc():
         logger.debug("The command only works on the Windows operating system.")
         return "The command only works on the Windows operating system."
     
-# УПРАВЛЕНИЕ ПК, МЫШЬ, КЛАВИАТУРА
+def get_system_volume() -> str: # Возвращаемый тип изменен на str, как у вас в коде
+    """Возвращает текущую системную громкость в процентах (от 0 до 100)."""
+    # Инициализируем COM для текущего потока
+    pythoncom.CoInitialize()
+    try:
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(
+            IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume_control = cast(interface, POINTER(IAudioEndpointVolume))
+        
+        current_volume_scalar = volume_control.GetMasterVolumeLevelScalar()
+        current_volume_percent = int(current_volume_scalar * 100)
+
+        print(f"Current volume: {current_volume_percent}%")
+        return f"Current volume: {current_volume_percent}%" # Лучше возвращать с % для ясности
+    except Exception as e:
+        print(f"Ошибка при получении информации о текущей громкости: {e}")
+        return f"Ошибка при получении информации о текущей громкости: {e}"
+    finally:
+        # Обязательно деинициализируем COM перед выходом из потока/функции
+        pythoncom.CoUninitialize()
+
+def set_system_volume(level_volume: int) -> str: # Возвращаемый тип изменен на str
+    """Принимает число от 0 до 100 и выставляет такую системную громкость."""
+    if not 0 <= level_volume <= 100:
+        return f"Громкость должна быть между 0 и 100, а не {level_volume}"
+
+    # Инициализируем COM для текущего потока
+    pythoncom.CoInitialize()
+    try:
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(
+            IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume_control = cast(interface, POINTER(IAudioEndpointVolume))
+        
+        target_volume_scalar = level_volume / 100.0
+        volume_control.SetMasterVolumeLevelScalar(target_volume_scalar, None)
+        
+        print(f"Volume changed to {level_volume}%.")
+        return f"Громкость изменена на {level_volume}%."
+    except Exception as e:
+        print(f"Error when changing volume: {e}")
+        return f"Ошибка при изменении громкости: {e}"
+    finally:
+        # Обязательно деинициализируем COM
+        pythoncom.CoUninitialize()
+
+def decrease_volume(amount: int = 10):
+    """Уменьшает системную громкость на указанное значение в процентах. Возвращает новую громкость в процентах."""
+    pythoncom.CoInitialize()
+    try:
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume_control = cast(interface, POINTER(IAudioEndpointVolume))
+        
+        current_volume_scalar = volume_control.GetMasterVolumeLevelScalar() # Получаем текущую громкость
+        
+        decrease_scalar = amount / 100.0 # Правильно вычисляем целевую громкость, 10 превратится в 0.1
+        target_volume_scalar = max(0.0, current_volume_scalar - decrease_scalar) # Текущая - указанная
+        
+        volume_control.SetMasterVolumeLevelScalar(target_volume_scalar, None) # Устанавливаем новую громкость
+        
+        new_volume_percent = int(target_volume_scalar * 100)
+        return f"Volume successfully decreased to {new_volume_percent}%."
+
+    except Exception as e:
+        return f"Error when changing volume: {e}"   
+    finally:
+        pythoncom.CoUninitialize()
+
+def increase_volume(amount: int = 10):
+    """Увеличивает системную громкость на указанное значение в процентах. Возвращает новую громкость в процентах."""
+    pythoncom.CoInitialize()
+    try:
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume_control = cast(interface, POINTER(IAudioEndpointVolume))
+        
+        current_volume_scalar = volume_control.GetMasterVolumeLevelScalar() # Получаем текущую громкость
+        increase_scalar = amount / 100.0 # Правильно вычисляем целевую громкость, 10 превратится в 0.1
+
+        target_volume_scalar = min(1.0, current_volume_scalar + increase_scalar) # Текущая + указанная
+        
+        volume_control.SetMasterVolumeLevelScalar(target_volume_scalar, None) # Устанавливаем новую громкость
+        
+        new_volume_percent = int(target_volume_scalar * 100)
+        return f"Volume successfully increased to {new_volume_percent}%."
+
+    except Exception as e:
+        return f"Error when changing volume: {e}"   
+    finally:
+        pythoncom.CoUninitialize()
+
+def get_habr_news(limit=5):
+    """Получает топ статей с Habr.com."""
+    url = 'https://habr.com/ru/all/'  # Главная страница с новыми статьями
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }  # Имитация браузера, чтобы избежать блокировок
+    
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Проверка на HTTP-ошибки
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        articles = soup.find_all('article', class_='tm-articles-list__item')[:limit] # Поиск контейнеров статей (класс 'tm-articles-list__item')
+        
+        result = []
+        for article in articles:
+            # Заголовок и ссылка
+            title_elem = article.find('a', class_='tm-title__link')
+            title = title_elem.text.strip() if title_elem else 'N/A'
+            link = 'https://habr.com' + title_elem['href'] if title_elem else 'N/A'
+            
+            # Краткое описание
+            summary_elem = article.find('div', class_='article-formatted-body')
+            summary = summary_elem.text.strip()[:200] + ' (text truncated for brevity)...' if summary_elem else 'N/A'
+            
+            result.append({
+                'title': title,
+                'link': link,
+                'summary': summary
+            })
+
+        # for i, art in enumerate(result, 1):
+        #     print(f"{i}. {art['title']}\n   Ссылка: {art['link']}\n   Кратко: {art['summary']}\n") # ДЛЯ ОТЛАДКИ
+
+        return result
+    
+    except requests.RequestException as e:
+        logger.error(f"Error requesting page: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Parsing error: {e}")
+        return []
+
+def get_system_metrics():
+    """Возвращает текущую нагрузку процессора, видеокарты и оперативной памяти один раз."""
+    try:
+        w = wmi.WMI(namespace="root\OpenHardwareMonitor")
+        sensors = w.Sensor()
+        if not sensors:
+            logger.info("No sensors are available. OpenHardwareMonitor may not be running.")
+            return "No sensors are available. OpenHardwareMonitor may not be running. Needs to be launched."
+
+        cpu_temp = None
+        cpu_load = None
+        gpu_temp = None
+        gpu_load = None
+        ram_load = None
+
+        # Ищем нужные сенсоры
+        for sensor in sensors:
+            if sensor.SensorType == "Temperature" and sensor.Name == "Temperature":
+                cpu_temp = sensor.Value
+            elif sensor.SensorType == "Load" and sensor.Name == "CPU Total":
+                cpu_load = sensor.Value
+            elif sensor.SensorType == "Temperature" and sensor.Name == "GPU Core":
+                gpu_temp = sensor.Value
+            elif sensor.SensorType == "Load" and sensor.Name == "GPU Core":
+                gpu_load = sensor.Value
+            elif sensor.SensorType == "Load" and sensor.Name == "Memory":
+                ram_load = sensor.Value
+
+        # Форматируем значения
+        cpu_temp = f"{cpu_temp:.1f}°C" if cpu_temp is not None else "Недоступно"
+        cpu_load = f"{cpu_load:.1f}%" if cpu_load is not None else "Недоступно"
+        gpu_temp = f"{gpu_temp:.1f}°C" if gpu_temp is not None else "Недоступно"
+        gpu_load = f"{gpu_load:.1f}%" if gpu_load is not None else "Недоступно"
+        ram_load = f"{ram_load:.1f}%" if ram_load is not None else "Недоступно"
+        now = datetime.now()
+
+        # Вывод в одну строку
+        output = (f"Readings from the main PC sensors ({now.strftime('%H:%M:%S')}): \nCPU: {cpu_temp}, {cpu_load}; \nGPU: {gpu_temp}, {gpu_load}; \nRAM: {ram_load}")
+        
+        return output
+    
+    except Exception as e:
+        logger.error(f"Error: {str(e)}. Make sure OpenHardwareMonitor is running.")
+        return f"Error: {str(e)}. Make sure OpenHardwareMonitor is running."
+    
+# УПРАВЛЕНИЕ ПК, МЫШЬ, КЛАВИАТУРА 
 
 def get_windows_layout():
     """
@@ -113,14 +300,9 @@ def get_windows_layout():
 
     # Словарь популярных раскладок. Полный список можно найти по запросу "Windows Language Code Identifier"
     layouts = {
-        0x409: "ENG",
-        0x419: "RUS",
-        0x407: "GER",
-        0x40C: "FRA",
-        0x410: "ITA",
-        0x411: "JPN", 
-        0x412: "KOR", 
-        0x804: "CHN" 
+        0x409: "ENG", 0x419: "RUS", 0x407: "GER",
+        0x40C: "FRA", 0x410: "ITA", 0x411: "JPN", 
+        0x412: "KOR", 0x804: "CHN" 
     }
 
     # Загружаем библиотеку user32.dll
@@ -285,57 +467,9 @@ def kill_process_by_name(process_name):
     return f"Sent a kill command to {process_name}."
 
 
-# os.listdir(path) — посмотреть, что лежит в папке.
-# os.mkdir(path) — создать папку.
-# os.remove(path) — удалить файл.
-# shutil.move(src, dst) — переместить/переименовать.
 
-# import shutil
-
-# def list_directory_contents(path="."):
-#     """Возвращает список файлов и папок в указанной директории."""
-#     return str(os.listdir(path))
-
-# def create_directory(path):
-#     """Создаёт новую папку."""
-#     os.makedirs(path, exist_ok=True) # exist_ok=True - чтобы не было ошибки, если папка уже есть
-#     return f"Directory {path} created."
-
-# def delete_path(path):
-#     """Удаляет файл или папку со всем её содержимым. ПИЗДЕЦ КАК ОПАСНО."""
-#     if os.path.isfile(path):
-#         os.remove(path)
-#     elif os.path.isdir(path):
-#         shutil.rmtree(path)
-#     return f"Path {path} has been deleted."
-
-# if __name__ == "__main__":
-#     import time  # noqa: F401
-#     print("ТЕСТЫ ВЗАИМОДЕЙСТВИЯ С МЫШКОЙ, КОПИРОВАНИЕМ И КЛАВИАТУРОЙ")
-#     manage_window("Steam", "activate")
-#     currently_open_windows()
-
-
-
-# #3: "ШЁПОТ, СУКА!" (Volume Control)
-# Твоя Вега может включить тебе Foobar2000, но она, блядь, не может СДЕЛАТЬ ПОГРОМЧЕ! Или, что важнее, ЗАМЬЮТИТЬ, НАХУЙ, ВСЁ, когда тебе звонит мама!
-# РЕШЕНИЕ: Библиотека pycaw (pip install pycaw). Она сложная, как ебаный адронный коллайдер, но даёт полный, сука, контроль над звуком!
-# code
-# Python
-# # ЭТО СЛОЖНЫЙ, БЛЯДЬ, ПРИМЕР!
-# from ctypes import cast, POINTER
-# from comtypes import CLSCTX_ALL
-# from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-
-# def set_system_volume(level):
-#     """Устанавливает системную громкость от 0.0 до 1.0."""
-#     devices = AudioUtilities.GetSpeakers()
-#     interface = devices.Activate(
-#         IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-#     volume = cast(interface, POINTER(IAudioEndpointVolume))
-#     volume.SetMasterVolumeLevelScalar(level, None)
-#     return f"System volume set to {level * 100}%."
-
-# def mute_system(mute_status):
-#     """Мьютит (True) или размьючивает (False) систему."""
-#     # ... (код похожий, ищи в доках pycaw) ...
+if __name__ == "__main__":
+    import time  # noqa: F401
+    get_system_volume()
+    time.sleep(2)
+    get_system_metrics()

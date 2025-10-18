@@ -58,7 +58,6 @@ def find_records_in_database(**kwargs):
         publish("USER_SPEECH_AND_RECORDS_FOUND_IN_DB", result)
         return 
     
-
     formatted_lines = []
 
     print("\nSearching for records in the database:")

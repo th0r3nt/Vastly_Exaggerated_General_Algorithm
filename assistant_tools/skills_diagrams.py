@@ -1,6 +1,6 @@
 # skills_diagrams.py
 get_weather_scheme = {
-    "name": "get_weather",
+    "name": "get_weather", # ВАЖНО: ИМЯ ДОЛЖНО СОВПАДАТЬ С ФУНКЦИЕЙ PYTHON
     "description": "Find the current weather in the specified city. This is necessary to answer weather questions with up-to-date data. If no city is specified, Lipetsk is the default location.",
     "parameters": {
         "type": "object",
@@ -298,4 +298,75 @@ kill_process_by_name_scheme = {
         },
         "required": ["process_name"]
     }
+}
+
+get_system_volume_scheme = {
+    "name": "get_system_volume",
+    "description": "Получает текущее значение громкости системы в процентах.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    },
+}
+
+set_system_volume_scheme = {
+    "name": "set_system_volume",
+    "description": "Устанавливает абсолютное значение громкости системы. Принимает значение от 0 до 100.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "level_volume": {
+                "type": "integer",
+                "description": "Целевой уровень громкости в процентах (например, 50).",
+            },
+        },
+        "required": ["level_volume"] # Явно указываем, что этот параметр обязателен
+    },
+}
+
+decrease_volume_scheme = {
+    "name": "decrease_volume",
+    "description": "Уменьшает громкость системы на указанное значение. По умолчанию уменьшает на 10%.", 
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "amount": {
+                "type": "integer",
+                "description": "Значение в процентах, на которое нужно уменьшить громкость (например, 15).",
+            },
+        },
+        # "required" здесь не нужен, так как у amount есть значение по умолчанию (он опциональный)
+    },
+}
+
+increase_volume_scheme = {
+    "name": "increase_volume",
+    "description": "Увеличивает громкость системы на указанное значение. По умолчанию увеличивает на 10%.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "amount": { 
+                "type": "integer",
+                "description": "Значение в процентах, на которое нужно увеличить громкость (например, 20).",
+            },
+        },
+    },
+}
+
+get_habr_news_scheme = {
+    "name": "get_habr_news",
+    "description": "Receives the latest news from Habr.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    },
+}
+
+get_system_metrics_scheme = {
+    "name": "get_system_metrics",
+    "description": "Gets the current load, temperature of the video card, processor and RAM in the system.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    },
 }

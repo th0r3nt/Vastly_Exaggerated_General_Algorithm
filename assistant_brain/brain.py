@@ -7,11 +7,19 @@ import os
 import json
 import datetime
 from collections import deque
+from PIL import Image 
+import logging
 from dotenv import load_dotenv
 from assistant_event_bus.event_bus import subscribe, publish
 from assistant_tools.utils import play_sfx
 import assistant_general.general_settings as general_settings
-from added_skills import function_declarations, skills_registry # ДОБАВЛЯТЬ НОВЫЕ УМЕНИЯ В ЭТОТ ФАЙЛ
+from assistant_general.general_tools import read_json, write_json
+from assistant_brain.added_skills import function_declarations, skills_registry # ДОБАВЛЯТЬ НОВЫЕ УМЕНИЯ В ЭТОТ ФАЙЛ
+from assistant_general.logger_config import setup_logger
+from assistant_tools.skills import make_screenshot
+
+setup_logger()
+logger = logging.getLogger(__name__)
 
 load_dotenv() # для загрузки API ключей из .env
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -43,72 +51,109 @@ def process_interaction(query, final_text_to_publish):
 def run_gemini_task(**kwargs):
     query = kwargs.get('query')
     database_context = kwargs.get('database_context')
+
+    # --- ШАГ 1: Захватываем контекст ОДИН РАЗ в начале ---
+    # Делаем скриншот и открываем его как объект Image.
+    # Это будет наш "контекст экрана" на всю операцию.
     try:
+        # Ваша функция make_screenshot должна возвращать словарь, как раньше.
+        # Мы просто используем путь из него.
+        screenshot_info = make_screenshot() 
+        if screenshot_info['status'] == 'success':
+            screenshot_path = screenshot_info['file_path']
+            img = Image.open(screenshot_path)
+            print(f"Скриншот сделан и готов к отправке: {screenshot_path}")
+        else:
+            # Если скриншот не удался, работаем без него
+            img = None
+            print(f"Не удалось сделать скриншот: {screenshot_info['message']}")
+    except Exception as e:
+        img = None
+        print(f"Ошибка при создании или открытии скриншота: {e}")
+
+    try:
+        # --- ШАГ 2: Собираем контент для ПЕРВОГО запроса ---
+        # Обратите внимание, как мы собираем 'contents' в виде списка
+        initial_contents = [
+            general_settings.VEGA_PERSONALITY_CORE,
+            f"""Right now, your task is to maintain a conversation. 
+            Don't deviate from your personality. BE BRIEF! Your name is feminine.
+
+            Here's the relevant information from your database (memory). Use it to provide the most complete answer. If the information is irrelevant, you can ignore it.
+            {database_context}
+
+            Here's the previous dialogue (useful for context):
+            {short_term_memory}
+
+            User request: {query}
+            V.E.G.A: 
+            """
+        ]
+        # Добавляем изображение, только если оно было успешно создано
+        if img:
+            initial_contents.append(img)
+
+        # Отправляем первый запрос
         response = client.models.generate_content(
-        model=general_settings.MODEL_GEMINI,
-        contents=general_settings.VEGA_PERSONALITY_CORE + 
-
-        f"""Right now, your task is to maintain a conversation. 
-        Don't deviate from your personality. BE BRIEF! Your name is feminine.
-
-        Here's the relevant information from your database (memory). Use it to provide the most complete answer. If the information is irrelevant, you can ignore it.
-        {database_context}
-
-
-        Here's the previous dialogue (useful for context):
-        {short_term_memory}
-
-
-        User request: {query}
-        V.E.G.A: 
-        """,
-        config=config,
+            model=general_settings.MODEL_GEMINI,
+            contents=initial_contents,
+            config=config,
         )
 
-        function_call_found = False
-        results_of_tool_calls = [] # Полезно, если нужно несколько вызовов Function Calling
+        function_calls = False
+        results_of_tool_calls = []
+        text_parts = []
+        
+        # Запоминаем историю первого ответа для второго запроса
+        history = response.candidates[0].content
 
         # Проверяем наличие вызовов Function Calling
-        for part in response.candidates[0].content.parts:
+        for part in history.parts:
             if hasattr(part, 'function_call') and part.function_call is not None:
                 function_call = part.function_call
-
                 print(f"\nFunction to call: {function_call.name}")
                 print(f"Arguments: {function_call.args}\n")
 
-                function_call_found = True
+                function_calls = True
 
                 function_to_call = skills_registry[function_call.name]
-                result = function_to_call(**function_call.args) # result = например, результат вызова skills.get_weather(city_name="Липецк")"; ** распоковывает словарь в именованные аргументы
-
-                history = response.candidates[0].content
+                result = function_to_call(**function_call.args)
 
                 function_response_part = types.Part(
                     function_response=types.FunctionResponse(
-                        name=function_call.name,    # Говорим, какую функцию вызвали
-                        response={'result': result} # Передаем результат, лучше обернуть в словарь
+                        name=function_call.name,
+                        response={'result': result}
                     )
                 )
-
                 results_of_tool_calls.append(function_response_part)
 
-        if function_call_found:
+            if hasattr(part, 'text'):
+                text_parts.append(part.text)
+
+        if function_calls:
+            # Передаем всё: личность, историю, результаты и СНОВА скриншот
+            follow_up_contents = [
+                general_settings.VEGA_PERSONALITY_CORE, 
+                history, 
+                *results_of_tool_calls
+            ]
+            if img:
+                follow_up_contents.append(img)
+
             final_response = client.models.generate_content(
                 model=general_settings.MODEL_GEMINI,
-                contents=[general_settings.VEGA_PERSONALITY_CORE, history, *results_of_tool_calls], # оператор распоковки списка - args звездочка нужна, чтобы не было списка внутри списка (по типу [ <ответ про погоду>, <ответ про дату> ])
+                contents=follow_up_contents,
                 config=config,
             )
-
             final_text_to_publish = final_response.text
-
-        if not function_call_found:
-            final_text_to_publish = response.text
+        else:
+            final_text_to_publish = "".join(text_parts)
 
         print(f"V.E.G.A.: {final_text_to_publish}")
         publish("GEMINI_RESPONSE", text=final_text_to_publish)
-        process_interaction(query, final_text_to_publish) # Сохранение в кратковременную память
+        process_interaction(query, final_text_to_publish)
 
-    except ConnectionError as e:
+    except Exception as e: # Более общее исключение
         print(f"Error when addressing Gemini API: {e}")
 
 def generate_response(*args, **kwargs):
@@ -138,39 +183,129 @@ def generate_response(*args, **kwargs):
 def initialize_brain():
     subscribe("USER_SPEECH_AND_RECORDS_FOUND_IN_DB", generate_response)
 
-def generate_greetings():
+def generate_general_greeting():
+    """Генерирует приветствие при первом запуске Веги. Проводит утренний брифинг, если Вега запущена впервые за день."""
     now = datetime.datetime.now()
-    time_str = now.strftime("%H:%M")
+    today_date_str = now.strftime("%Y-%m-%d") # Результат в формате: "2025-10-17"
 
-    try:
-        response = client.models.generate_content(
-        model=general_settings.MODEL_GEMINI,
-        contents=general_settings.VEGA_PERSONALITY_CORE + f"""
-        Here's the previous dialogue (useful for context):
-        {short_term_memory}
+    tasks_file = "tasks_completed_today.json"
 
+    tasks_completed_today = read_json(tasks_file) # Читаем файл с выполненными задачами
+    last_briefing_date_str = tasks_completed_today['last_briefing_date']
+
+    if last_briefing_date_str != today_date_str: # ЕСЛИ ПЕРВЫЙ ЗАПУСК ЗА ДЕНЬ - СЛЕДУЕТ ПРОВЕСТИ УТРЕННИЙ БРИФИНГ
+        try:
+            print("Generating a briefing...")
+            from assistant_tools.skills import get_weather, get_habr_news
+            from assistant_vector_database.database import vectorstore
+
+            # Собираем данные для брифинга
+            now = datetime.datetime.now()
+            time_str = now.strftime("%H:%M")
+            weather_data = get_weather() # Получаем погоду
+            habr_news = get_habr_news(limit=general_settings.NUM_OF_NEWS_IN_BRIEFING) # Получаем свежие новости
+            # system_metrics = get_system_metrics() # Получаем состояние системы
+            memory_database = vectorstore.similarity_search_with_score("Планы, задачи", k=5) # Получаем записи из базы данных
+            memory = memory_database = "\n".join([record.page_content for record, score in memory_database]) # Сортируем в красивую строку
+            logger.debug(f"Записи в датабазе для утреннего брифинга: {memory}")
+            # Можно добавить в лист компрехеншн if score <= general_settings.SIMILARITY_THRESHOLD если в базу данных попадается шелуха
+
+            response = client.models.generate_content(
+            model=general_settings.MODEL_GEMINI,
+            contents=general_settings.VEGA_PERSONALITY_CORE + f"""
+            Your task is to conduct a briefing for Sir. This is the first activation of the day (be prepared for activation at any time, whether it's 02:00 or 13:00).
+
+            Analyze and synthesize the raw data provided below. Your report must be a single, coherent text, not a list of facts.
+
+            Structure guidelines (use as inspiration):
+            Begin with a greeting appropriate for the time of day/evening/whenever the user has activated you.
+            Briefly mention key weather indicators. You may add a sarcastic comment if the weather is unfavorable.
+            Select the 1-2 most important or interesting news items from the list and present them in a concise form. Do not list everything.
+            Briefly mention the overall system status if there is anything noteworthy (e.g., high load).
+            If the user has set any tasks for himself or anything else, you may, but are not obligated to, remind him of them in your own manner. Pay attention to dates in your memory and compare them with the current one, as this is quite important: records that are sufficiently old can be omitted.
+            Conclude the briefing with a business-like, motivational, or sarcastic remark that summarizes the situation.
+
+            Maintain your style: brevity, analytics, professionalism, and subtle sarcasm.
+
+            Here is the raw data for analysis:
+            Current time and date: {time_str}
+            Current weather in Lipetsk: {weather_data};
+            Current news from Habr: {habr_news};
+            Data from your memory (you may skip this if it contains nothing useful): {memory}
+
+            Here is the previous dialogue (may be useful for context):
+            {short_term_memory}
+
+
+
+            """, 
+            config=config,
+            )
+
+            
+            # Собираем текстовые части, чтобы избежать предупреждения
+            text_parts = []
+
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'text'):
+                    text_parts.append(part.text)
+            
+            greeting_text = "".join(text_parts)
+
+            play_sfx("system_startup")
+            print(f"V.E.G.A. (briefing): {greeting_text}")
+            publish("GEMINI_RESPONSE", text=greeting_text)
+
+            current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            short_term_memory.append(f"{current_date}, User activated the system.")
+            short_term_memory.append(f"{current_date}, V.E.G.A. (briefing): {greeting_text}") # Запись в кратковременную память
+            save_memory()
+
+            tasks_completed_today['last_briefing_date'] = today_date_str # Меняем дату последнего брифинга на сегодня
+            # tasks_completed_today['briefing_completed'] = True
+            write_json(tasks_file, tasks_completed_today)
+
+        except Exception as e:
+            print(f"[Brain] Error when addressing Gemini API: {e}")
         
+    elif last_briefing_date_str == today_date_str: # ЕСЛИ ЗАПУСК НЕ ПЕРВЫЙ ЗА ДЕНЬ
+        print("Generating a standard greeting protocol...")
+        now = datetime.datetime.now()
+        time_str = now.strftime("%H:%M")
+        try:
+            response = client.models.generate_content(
+            model=general_settings.MODEL_GEMINI,
+            contents=general_settings.VEGA_PERSONALITY_CORE + f"""
+            Here's the previous dialogue (useful for context):
+            {short_term_memory}
 
-        The user has launched you. The current time is: {time_str}.
-        Your task is to greet the user. Your greeting SHOULD be as personalized as possible and include a witty or sarcastic comment on any issue: 
-        whether it's the frequency of data posting, for example, if the last post was very recent (less than 5 minutes), or an unusual time. 
-        Alternatively, you can use context from previous conversations. If such a sarcastic comment doesn't work, greet the user normally. 
-        Keep the tone brief, businesslike, and sarcastic, similar to Jarvis. Your name is feminine.
-        """,
-        config=config,
-        )
+            The user has launched you. The current time is: {time_str}.
+            Your task is to greet the user. Your greeting SHOULD be as personalized as possible and include a witty or sarcastic comment on any issue: 
+            whether it's the frequency of data posting, for example, if the last post was very recent (less than 5 minutes), or an unusual time. 
+            Alternatively, you can use context from previous conversations. If such a sarcastic comment doesn't work, greet the user normally. 
+            Keep the tone brief, businesslike, and sarcastic, similar to Jarvis. Your name is feminine.
+            """,
+            config=config,
+            )
+            
+            # Собираем текстовые части, чтобы избежать предупреждения
+            text_parts = []
 
-        play_sfx("system_startup")
-        print(f"V.E.G.A.: {response.text}")
-        publish("GEMINI_RESPONSE", text=response.text)
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'text'):
+                    text_parts.append(part.text)
+            
+            greeting_text = "".join(text_parts)
 
-        current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        short_term_memory.append(f"{current_date}, User activated the system.")
-        short_term_memory.append(f"{current_date}, V.E.G.A.: {response.text}") # Запись в кратковременную память
-        save_memory()
+            play_sfx("system_startup")
+            print(f"V.E.G.A.: {greeting_text}")
+            publish("GEMINI_RESPONSE", text=greeting_text)
 
-    except Exception as e:
-        print(f"[Brain] Error when addressing Gemini API: {e}")
+            current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            short_term_memory.append(f"{current_date}, User activated the system.")
+            short_term_memory.append(f"{current_date}, V.E.G.A.: {greeting_text}") # Запись в кратковременную память
+            save_memory()
 
-
-
+        except Exception as e:
+            print(f"[Brain] Error when addressing Gemini API: {e}")
+    

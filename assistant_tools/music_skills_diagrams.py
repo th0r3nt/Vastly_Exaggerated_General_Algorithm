@@ -92,3 +92,12 @@ music_play_track_scheme = {
         },
     },
 }
+
+music_play_random_album_scheme = {
+    "name": "music_play_random_album",
+    "description": "Includes a random existing playlist.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    },
+}

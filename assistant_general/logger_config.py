@@ -1,6 +1,14 @@
 # logger_config.py
 import logging
 import sys
+from assistant_general.general_settings import LOG_OUTPUT_LEVEL
+
+# Чтобы инициализировать логгер в других файлах:
+# import logging
+# from assistant_general.logger_config import setup_logger
+# setup_logger()
+# logger = logging.getLogger(__name__)
+# logger.info("Test")
 
 def setup_logger():
     """Настраивает корневой логгер, от которого наследуются все остальные."""
@@ -11,7 +19,7 @@ def setup_logger():
     if root_logger.hasHandlers():
         return
 
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(LOG_OUTPUT_LEVEL)
 
     # Создаем обработчики
     stdout_handler = logging.StreamHandler(sys.stdout)
@@ -29,10 +37,3 @@ def setup_logger():
     root_logger.addHandler(stdout_handler)
     root_logger.addHandler(file_handler)
 
-
-# Чтобы инициализировать логгер в других файлах:
-# import logging
-# from assistant_general.logger_config import setup_logger
-# setup_logger()
-# logger = logging.getLogger(__name__)
-# logger.info("Test")
