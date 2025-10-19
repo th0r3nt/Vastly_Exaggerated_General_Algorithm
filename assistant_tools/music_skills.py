@@ -15,6 +15,10 @@ FOOBAR_PATH = os.getenv("FOOBAR_PATH")
 MUSIC_LIBRARY_PATH = os.getenv("MUSIC_LIBRARY_PATH")
 SILENT_TRACK_PATH = os.getenv("SILENT_TRACK_PATH")
 
+# ДЛЯ РЕГИСТРАЦИИ НОВЫХ НАВЫКОВ В ВЕГУ НУЖНО:
+# Написать json схему в music_skills_diagrams.py
+# Перейти в assistant_brain.added_skills.py и следовать инструкциям, которые описаны в файле
+
 # ЧТОБЫ СОЗДАВАЛСЯ НОВЫЙ ПЛЕЙЛИСТ В КОДЕ, НАДО:
 # НАПИСАТЬ СНАЧАЛА success = _send_foobar_command(['/add', random_track_path]), А УЖЕ ПОТОМ
 # success = _send_foobar_command(['/play', playlist_path])
@@ -23,7 +27,6 @@ SILENT_TRACK_PATH = os.getenv("SILENT_TRACK_PATH")
 
 setup_logger()
 logger = logging.getLogger(__name__)
-
 
 def _send_foobar_command(command_args):
     """Системная команда для других функций, управляет Foobar2000."""

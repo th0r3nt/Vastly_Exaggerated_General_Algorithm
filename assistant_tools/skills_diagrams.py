@@ -232,8 +232,8 @@ system_command_scheme = {
     }
 }
 
-get_filtered_processes_scheme = {
-    "name": "get_filtered_processes",
+get_processes_scheme = {
+    "name": "get_processes",
     "description": "Returns a clean list of user-run applications, filtering out system processes.",
     "parameters": {
         "type": "object",

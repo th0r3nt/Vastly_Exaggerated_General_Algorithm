@@ -94,3 +94,11 @@ def find_records_in_database(**kwargs):
 def initialize_database():
     subscribe("USER_SPEECH", find_records_in_database)
 
+if __name__ == "__main__":
+    while True:
+        new_record = input("Введите новую запись, которую нужно добавить (введите '0' для выхода): \n>>")
+
+        if new_record != "0":
+            add_new_memory(new_record)
+        else:
+            break

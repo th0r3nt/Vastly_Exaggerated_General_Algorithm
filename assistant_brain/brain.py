@@ -7,7 +7,6 @@ import os
 import json
 import datetime
 from collections import deque
-from PIL import Image 
 import logging
 from dotenv import load_dotenv
 from assistant_event_bus.event_bus import subscribe, publish
@@ -16,7 +15,7 @@ import assistant_general.general_settings as general_settings
 from assistant_general.general_tools import read_json, write_json
 from assistant_brain.added_skills import function_declarations, skills_registry # ДОБАВЛЯТЬ НОВЫЕ УМЕНИЯ В ЭТОТ ФАЙЛ
 from assistant_general.logger_config import setup_logger
-from assistant_tools.skills import make_screenshot
+from assistant_tools.skills import get_screenshot_context, get_time, get_date, get_habr_news, get_processes, get_system_volume
 
 setup_logger()
 logger = logging.getLogger(__name__)
@@ -42,42 +41,22 @@ def save_memory():
 
 short_term_memory = deque(short_term_memory, maxlen=general_settings.MAX_MEMORY) # Применяем deque к загруженному списку, чтобы снова включить лимит
 
-def process_interaction(query, final_text_to_publish):
+def _process_interaction(query, final_text_to_publish):
+    """Сохраняет запрос пользователя и ответ Веги в кратковременную память, записывая конкретное  время общения."""
     current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     short_term_memory.append(f"{current_date}, User: {query}")
     short_term_memory.append(f"{current_date}, V.E.G.A.: {final_text_to_publish}")
     save_memory() # Важно: Сохранять нужно либо после каждого добавления, либо при завершении программы
 
-def run_gemini_task(**kwargs):
+def _run_gemini_task(**kwargs):
     query = kwargs.get('query')
     database_context = kwargs.get('database_context')
-
-    # --- ШАГ 1: Захватываем контекст ОДИН РАЗ в начале ---
-    # Делаем скриншот и открываем его как объект Image.
-    # Это будет наш "контекст экрана" на всю операцию.
+    img = kwargs.get("img", None)
     try:
-        # Ваша функция make_screenshot должна возвращать словарь, как раньше.
-        # Мы просто используем путь из него.
-        screenshot_info = make_screenshot() 
-        if screenshot_info['status'] == 'success':
-            screenshot_path = screenshot_info['file_path']
-            img = Image.open(screenshot_path)
-            print(f"Скриншот сделан и готов к отправке: {screenshot_path}")
-        else:
-            # Если скриншот не удался, работаем без него
-            img = None
-            print(f"Не удалось сделать скриншот: {screenshot_info['message']}")
-    except Exception as e:
-        img = None
-        print(f"Ошибка при создании или открытии скриншота: {e}")
-
-    try:
-        # --- ШАГ 2: Собираем контент для ПЕРВОГО запроса ---
-        # Обратите внимание, как мы собираем 'contents' в виде списка
         initial_contents = [
             general_settings.VEGA_PERSONALITY_CORE,
             f"""Right now, your task is to maintain a conversation. 
-            Don't deviate from your personality. BE BRIEF! Your name is feminine.
+            Don't deviate from your personality. Your name is feminine.
 
             Here's the relevant information from your database (memory). Use it to provide the most complete answer. If the information is irrelevant, you can ignore it.
             {database_context}
@@ -149,15 +128,17 @@ def run_gemini_task(**kwargs):
         else:
             final_text_to_publish = "".join(text_parts)
 
+        final_text_to_publish = final_text_to_publish.replace("*", "").replace("#", "").replace("V.E.G.A.", "VEGA").replace("&", "and")
+
         print(f"V.E.G.A.: {final_text_to_publish}")
         publish("GEMINI_RESPONSE", text=final_text_to_publish)
-        process_interaction(query, final_text_to_publish)
+        _process_interaction(query, final_text_to_publish)
 
     except Exception as e: # Более общее исключение
         print(f"Error when addressing Gemini API: {e}")
 
 def generate_response(*args, **kwargs):
-    """Принимает данные от поисковика и запускает генерацию ответа в отдельном потоке."""
+    """Принимает запрос пользователя, контекст из векторной базы данных, делает контекстный скриншот и вызывает _run_gemini_task, передавая необходимые данные в ОТДЕЛЬНОМ ПОТОКЕ."""
     if not args:
         print("*args not found")
         return
@@ -171,31 +152,36 @@ def generate_response(*args, **kwargs):
     if not query:
         print("Query not found")
         return
+    
+    image_context = get_screenshot_context() # Получаем в контекст изображение экрана
 
     worker_thread = threading.Thread(
-        target=run_gemini_task, 
-        kwargs={"query": query, "database_context": database_context}
+        target=_run_gemini_task, 
+        kwargs={"query": query, "database_context": database_context, "img": image_context}
     )
     worker_thread.start()
 
     print("\n[Brain] The task for Gemini has been sent to the background.")
 
 def initialize_brain():
+    """Подписывается на событие обнаруженной речи (или текстового запроса) от пользователя, указывает, что применять при появлении этого события."""
     subscribe("USER_SPEECH_AND_RECORDS_FOUND_IN_DB", generate_response)
 
 def generate_general_greeting():
-    """Генерирует приветствие при первом запуске Веги. Проводит утренний брифинг, если Вега запущена впервые за день."""
+    """Генерирует приветствие при любом запуске Веги. Если Вега запущена впервые за день: проводит утренний брифинг; иначе стандартно приветствует."""
+    tasks_file = "assistant_background_tasks\\tasks_completed_today.json"
+    tasks_completed_today = read_json(tasks_file) # Читаем файл с выполненными задачами
+
     now = datetime.datetime.now()
     today_date_str = now.strftime("%Y-%m-%d") # Результат в формате: "2025-10-17"
+    current_hour = now.hour  # Получаем час как int, чтобы лучше сравнить с BRIEFING_START_HOUR: если текущий час больше, чем, к примеру, 5 часов утра, то стоит провести брифинг
+    last_briefing_date_str = tasks_completed_today.get('last_briefing_date', None) # Получаем дату, когда последний раз был проведен брифинг
 
-    tasks_file = "tasks_completed_today.json"
+    image_context = get_screenshot_context() # Получаем в контекст изображение экрана
 
-    tasks_completed_today = read_json(tasks_file) # Читаем файл с выполненными задачами
-    last_briefing_date_str = tasks_completed_today['last_briefing_date']
-
-    if last_briefing_date_str != today_date_str: # ЕСЛИ ПЕРВЫЙ ЗАПУСК ЗА ДЕНЬ - СЛЕДУЕТ ПРОВЕСТИ УТРЕННИЙ БРИФИНГ
+    if last_briefing_date_str != today_date_str and current_hour >= general_settings.BRIEFING_START_HOUR: # Сравнивает текущую дату и дату в 'last_briefing_date': если даты разные - СЛЕДУЕТ ПРОВЕСТИ БРИФИНГ
         try:
-            print("Generating a briefing...")
+            print("Generating a briefing.")
             from assistant_tools.skills import get_weather, get_habr_news
             from assistant_vector_database.database import vectorstore
 
@@ -204,15 +190,12 @@ def generate_general_greeting():
             time_str = now.strftime("%H:%M")
             weather_data = get_weather() # Получаем погоду
             habr_news = get_habr_news(limit=general_settings.NUM_OF_NEWS_IN_BRIEFING) # Получаем свежие новости
-            # system_metrics = get_system_metrics() # Получаем состояние системы
             memory_database = vectorstore.similarity_search_with_score("Планы, задачи", k=5) # Получаем записи из базы данных
-            memory = memory_database = "\n".join([record.page_content for record, score in memory_database]) # Сортируем в красивую строку
+            memory = memory_database = "\n".join([record.page_content for record, score in memory_database]) # Сортируем в красивую строку, можно добавить if score <= general_settings.SIMILARITY_THRESHOLD если в базу данных попадается шелуха
             logger.debug(f"Записи в датабазе для утреннего брифинга: {memory}")
-            # Можно добавить в лист компрехеншн if score <= general_settings.SIMILARITY_THRESHOLD если в базу данных попадается шелуха
 
-            response = client.models.generate_content(
-            model=general_settings.MODEL_GEMINI,
-            contents=general_settings.VEGA_PERSONALITY_CORE + f"""
+            initial_contents = [
+            general_settings.VEGA_PERSONALITY_CORE + f"""
             Your task is to conduct a briefing for Sir. This is the first activation of the day (be prepared for activation at any time, whether it's 02:00 or 13:00).
 
             Analyze and synthesize the raw data provided below. Your report must be a single, coherent text, not a list of facts.
@@ -236,13 +219,20 @@ def generate_general_greeting():
             Here is the previous dialogue (may be useful for context):
             {short_term_memory}
 
+            """
+            ]
+            # Добавляем изображение, только если оно было успешно создано
+            if image_context:
+                initial_contents.append(image_context)
 
-
-            """, 
-            config=config,
+            # Отправляем первый запрос
+            response = client.models.generate_content(
+                model=general_settings.MODEL_GEMINI,
+                contents=initial_contents,
+                config=config,
             )
 
-            
+
             # Собираем текстовые части, чтобы избежать предупреждения
             text_parts = []
 
@@ -268,24 +258,32 @@ def generate_general_greeting():
         except Exception as e:
             print(f"[Brain] Error when addressing Gemini API: {e}")
         
-    elif last_briefing_date_str == today_date_str: # ЕСЛИ ЗАПУСК НЕ ПЕРВЫЙ ЗА ДЕНЬ
-        print("Generating a standard greeting protocol...")
+    else: # ЕСЛИ ЗАПУСК НЕ ПЕРВЫЙ ЗА ДЕНЬ ИЛИ ЧАС МЕНЬШЕ УСТАНОВЛЕННОГО - СТАНДАРТНОЕ ПРИВЕТСТВИЕ
+        print("Generating a standard greeting protocol.")
         now = datetime.datetime.now()
         time_str = now.strftime("%H:%M")
         try:
-            response = client.models.generate_content(
-            model=general_settings.MODEL_GEMINI,
-            contents=general_settings.VEGA_PERSONALITY_CORE + f"""
-            Here's the previous dialogue (useful for context):
+            initial_contents = [
+            general_settings.VEGA_PERSONALITY_CORE + f"""
+            Here's the previous conversation (useful for context):
             {short_term_memory}
 
-            The user has launched you. The current time is: {time_str}.
-            Your task is to greet the user. Your greeting SHOULD be as personalized as possible and include a witty or sarcastic comment on any issue: 
-            whether it's the frequency of data posting, for example, if the last post was very recent (less than 5 minutes), or an unusual time. 
-            Alternatively, you can use context from previous conversations. If such a sarcastic comment doesn't work, greet the user normally. 
+            The user just launched you again earlier today. The current time is: {time_str}.
+            Your task is to greet the user. Your greeting should be as personalized as possible and include a witty or sarcastic comment.
+
+            Keep the tone personal.
             Keep the tone brief, businesslike, and sarcastic, similar to Jarvis. Your name is feminine.
-            """,
-            config=config,
+            """
+            ]
+            # Добавляем изображение, только если оно было успешно создано
+            if image_context:
+                initial_contents.append(image_context)
+
+            # Отправляем первый запрос
+            response = client.models.generate_content(
+                model=general_settings.MODEL_GEMINI,
+                contents=initial_contents,
+                config=config,
             )
             
             # Собираем текстовые части, чтобы избежать предупреждения
@@ -308,4 +306,106 @@ def generate_general_greeting():
 
         except Exception as e:
             print(f"[Brain] Error when addressing Gemini API: {e}")
-    
+
+def litany_of_analysis_screen():
+    """По горячей клавише (по умолчанию - 'ctrl+alt+shift+a') вызывает Вегу и говорит ей, что нужно анализировать экран (для помощи в чем-то)."""
+    print("A litany of screen analysis has been called.")
+    img = get_screenshot_context()
+    try:
+        initial_contents = [
+            general_settings.VEGA_PERSONALITY_CORE,
+            f"""
+            Current Directive: "What Now?"
+
+            Sir has activated the hotkey protocol. Your primary function is to analyze the screen buffer to deduce the reason for this summons. The cause may range from a critical system fault, to a perplexing social entanglement, or simply existential laziness.
+
+            Possible scenarios include:
+
+            Chat Interface: Probably that Sir requires you to formulate a response on your behalf (as [V.E.G.A.]) and/or analyze the ongoing dialogue, profile the other participant. 
+            In most cases, a chat consists of a user and their interlocutor. In this case, you can take on a kind of "third party" role.
+
+            Meme/Humor Artifact: It is possible the user is requesting an evaluation of a joke or an internet meme... The motives for such a request are currently outside standard operating parameters.
+            Code/IDE: Likely a logical deadlock or a runtime error. Your task is to identify the fault.
+            Webpage/Document: He likely requires an assessment of the text and a summary (in that case, you can make it a little longer to show more information).
+            Unfamiliar Application/System Prompt: The user has encountered an unknown interface or system message. Your directive is to provide assistance.
+
+            A quick reminder: If, for example, a user is reading an article, you shouldn't start your response by saying "Sir, you are reading..." - you should get straight to the point.
+
+            
+            Here is the preceding dialogue log (it may provide context):
+
+            {short_term_memory}
+
+            """
+        ]
+        # Добавляем изображение, только если оно было успешно создано
+        if img:
+            initial_contents.append(img)
+
+        # Отправляем первый запрос
+        response = client.models.generate_content(
+            model=general_settings.MODEL_GEMINI,
+            contents=initial_contents,
+            config=config,
+        )
+
+        function_calls = False
+        results_of_tool_calls = []
+        text_parts = []
+        
+        # Запоминаем историю первого ответа для второго запроса
+        history = response.candidates[0].content
+
+        # Проверяем наличие вызовов Function Calling
+        for part in history.parts:
+            if hasattr(part, 'function_call') and part.function_call is not None:
+                function_call = part.function_call
+                print(f"\nFunction to call: {function_call.name}")
+                print(f"Arguments: {function_call.args}\n")
+
+                function_calls = True
+
+                function_to_call = skills_registry[function_call.name]
+                result = function_to_call(**function_call.args)
+
+                function_response_part = types.Part(
+                    function_response=types.FunctionResponse(
+                        name=function_call.name,
+                        response={'result': result}
+                    )
+                )
+                results_of_tool_calls.append(function_response_part)
+
+            if hasattr(part, 'text'):
+                text_parts.append(part.text)
+
+        if function_calls:
+            # Передаем всё: личность, историю, результаты и СНОВА скриншот
+            follow_up_contents = [
+                general_settings.VEGA_PERSONALITY_CORE, 
+                history, 
+                *results_of_tool_calls
+            ]
+            if img:
+                follow_up_contents.append(img)
+
+            final_response = client.models.generate_content(
+                model=general_settings.MODEL_GEMINI,
+                contents=follow_up_contents,
+                config=config,
+            )
+            final_text_to_publish = final_response.text
+        else:
+            final_text_to_publish = "".join(text_parts)
+
+        final_text_to_publish = final_text_to_publish.replace("*", "").replace("#", "").replace("V.E.G.A.", "VEGA").replace("&", "and")
+        print(f"V.E.G.A.: {final_text_to_publish}")
+        publish("GEMINI_RESPONSE", text=final_text_to_publish)
+        _process_interaction("The user clicked the screen analysis button", final_text_to_publish)
+
+    except Exception as e:
+        print(f"Error when addressing Gemini API: {e}")
+
+
+
+

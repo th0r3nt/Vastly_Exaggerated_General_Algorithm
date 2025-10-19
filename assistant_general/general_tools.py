@@ -19,4 +19,3 @@ def write_json(filename: str, data: dict):
             json.dump(data, file, indent=4)
     except Exception as e:
         return f"Error writing to json file: {e}"
-

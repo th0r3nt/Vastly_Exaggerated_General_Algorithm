@@ -36,4 +36,3 @@ def setup_logger():
     # Добавляем обработчики к корневому логгеру
     root_logger.addHandler(stdout_handler)
     root_logger.addHandler(file_handler)
-

@@ -3,34 +3,7 @@
 # Содержимое файла: assistant_background_tasks/background_tasks.py
 ========================================
 
-import wmi
-from datetime import datetime
-import logging
-import sys
-import os
-import requests
-from datetime import datetime  # noqa: F811
-
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-from assistant_general.logger_config import setup_logger  # noqa: E402
-
-setup_logger()
-logger = logging.getLogger(__name__)
-
-# ЧТО НУЖНО РЕАЛИЗОВАТЬ:
-# Задачи, выполняемые только ОДИН раз в день 
-# "morning_briefing": - ежедневный брифинг с погодой, новыми новостями
-# "file_cleanup": - очистка ненужный файлов каждый вечер-ночь
-# "system_health_check": - проверка логов нагрузки системы каждый вечер
-# "social_digest": - парсит соцсети (например, телеграм-канал) и выдает краткую сводку самых важных новостей от контактов или каналов    
-
-# Задачи, выполняемые ЧАЩЕ раза в день
-# "arxiv_parse": - парсинг научных статей каждые 6 часов.
-# "system_monitor_snapshot": Сохранение "снимка" состояния системы (CPU, RAM) каждые 5 минут для построения исторических графиков (обязательно для system_health_check)
-
+# Когда-нибудь, когда-нибудь
 
 
 
@@ -46,8 +19,8 @@ logger = logging.getLogger(__name__)
 from assistant_tools.skills_diagrams import (
     get_weather_scheme, search_in_google_scheme, get_date_scheme, get_time_scheme, make_screenshot_scheme, save_to_memory_scheme, lock_pc_scheme,
     get_windows_layout_scheme, move_mouse_scheme, current_mouse_coordinates_scheme, click_mouse_scheme, scroll_mouse_scheme, drag_mouse_scheme,
-    press_hotkey_scheme, copy_to_clipboard_scheme, write_text_scheme, system_command_scheme, get_filtered_processes_scheme, currently_open_windows_scheme,
-    manage_window_scheme, open_program_scheme, kill_process_by_name_scheme, get_system_volume_scheme, set_system_volume_scheme, decrease_volume_scheme,
+    press_hotkey_scheme, copy_to_clipboard_scheme, write_text_scheme, system_command_scheme, get_processes_scheme, currently_open_windows_scheme,
+    get_system_volume_scheme, set_system_volume_scheme, decrease_volume_scheme,
     increase_volume_scheme, get_habr_news_scheme, get_system_metrics_scheme,
 )
 from assistant_tools.music_skills_diagrams import ( # Отдельные музыкальные навыки
@@ -91,11 +64,8 @@ function_declarations = [
     system_command_scheme, 
 
     # НАВЫКИ, СВЯЗАННЫЕ С ВЗАИМОДЕЙСТВИЕМ С ПРИЛОЖЕНИЯМИ И ОКНАМИ
-    get_filtered_processes_scheme, 
+    get_processes_scheme, 
     currently_open_windows_scheme,
-    manage_window_scheme, 
-    open_program_scheme, 
-    kill_process_by_name_scheme, 
 
     # НАВЫКИ, СВЯЗАННЫЕ С МУЗЫКОЙ ИЗ FOOBAR2000
     music_play_random_scheme, 
@@ -142,11 +112,8 @@ skills_registry = {
     "system_command": assistant_tools.skills.system_command,
 
     # НАВЫКИ, СВЯЗАННЫЕ С ВЗАИМОДЕЙСТВИЕМ С ПРИЛОЖЕНИЯМИ И ОКНАМИ
-    "get_filtered_processes": assistant_tools.skills.get_filtered_processes,
+    "get_processes": assistant_tools.skills.get_processes,
     "currently_open_windows": assistant_tools.skills.currently_open_windows,
-    "manage_window": assistant_tools.skills.manage_window,
-    "open_program": assistant_tools.skills.open_program,
-    "kill_process_by_name": assistant_tools.skills.kill_process_by_name,
 
     # НАВЫКИ, СВЯЗАННЫЕ С МУЗЫКОЙ ИЗ FOOBAR2000
     "music_play_random": assistant_tools.music_skills.music_play_random,
@@ -175,12 +142,18 @@ import os
 import json
 import datetime
 from collections import deque
+import logging
 from dotenv import load_dotenv
 from assistant_event_bus.event_bus import subscribe, publish
 from assistant_tools.utils import play_sfx
 import assistant_general.general_settings as general_settings
-from systemic_tools.systemic_skills import read_json, write_json
+from assistant_general.general_tools import read_json, write_json
 from assistant_brain.added_skills import function_declarations, skills_registry # ДОБАВЛЯТЬ НОВЫЕ УМЕНИЯ В ЭТОТ ФАЙЛ
+from assistant_general.logger_config import setup_logger
+from assistant_tools.skills import get_screenshot_context, get_time, get_date, get_habr_news, get_processes, get_system_volume
+
+setup_logger()
+logger = logging.getLogger(__name__)
 
 load_dotenv() # для загрузки API ключей из .env
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -203,93 +176,102 @@ def save_memory():
 
 short_term_memory = deque(short_term_memory, maxlen=general_settings.MAX_MEMORY) # Применяем deque к загруженному списку, чтобы снова включить лимит
 
-def process_interaction(query, final_text_to_publish):
+def _process_interaction(query, final_text_to_publish):
+    """Сохраняет запрос пользователя и ответ Веги в кратковременную память, записывая конкретное  время общения."""
     current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     short_term_memory.append(f"{current_date}, User: {query}")
     short_term_memory.append(f"{current_date}, V.E.G.A.: {final_text_to_publish}")
     save_memory() # Важно: Сохранять нужно либо после каждого добавления, либо при завершении программы
 
-def run_gemini_task(**kwargs):
+def _run_gemini_task(**kwargs):
     query = kwargs.get('query')
     database_context = kwargs.get('database_context')
+    img = kwargs.get("img", None)
     try:
+        initial_contents = [
+            general_settings.VEGA_PERSONALITY_CORE,
+            f"""Right now, your task is to maintain a conversation. 
+            Don't deviate from your personality. Your name is feminine.
+
+            Here's the relevant information from your database (memory). Use it to provide the most complete answer. If the information is irrelevant, you can ignore it.
+            {database_context}
+
+            Here's the previous dialogue (useful for context):
+            {short_term_memory}
+
+            User request: {query}
+            V.E.G.A: 
+            """
+        ]
+        # Добавляем изображение, только если оно было успешно создано
+        if img:
+            initial_contents.append(img)
+
+        # Отправляем первый запрос
         response = client.models.generate_content(
-        model=general_settings.MODEL_GEMINI,
-        contents=general_settings.VEGA_PERSONALITY_CORE + 
-
-        f"""Right now, your task is to maintain a conversation. 
-        Don't deviate from your personality. BE BRIEF! Your name is feminine.
-
-        Here's the relevant information from your database (memory). Use it to provide the most complete answer. If the information is irrelevant, you can ignore it.
-        {database_context}
-
-
-        Here's the previous dialogue (useful for context):
-        {short_term_memory}
-
-
-        User request: {query}
-        V.E.G.A: 
-        """,
-        config=config,
+            model=general_settings.MODEL_GEMINI,
+            contents=initial_contents,
+            config=config,
         )
 
         function_calls = False
-        results_of_tool_calls = [] # Полезно, если нужно несколько вызовов Function Calling
-
-        text_parts = [] # Нужно, чтобы данные не терялись, если вызовов функций от нейросети не было
+        results_of_tool_calls = []
+        text_parts = []
+        
+        # Запоминаем историю первого ответа для второго запроса
+        history = response.candidates[0].content
 
         # Проверяем наличие вызовов Function Calling
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, 'function_call') and part.function_call is not None: # Если проверяемая часть - вызов функции
+        for part in history.parts:
+            if hasattr(part, 'function_call') and part.function_call is not None:
                 function_call = part.function_call
-
                 print(f"\nFunction to call: {function_call.name}")
                 print(f"Arguments: {function_call.args}\n")
 
                 function_calls = True
 
                 function_to_call = skills_registry[function_call.name]
-                result = function_to_call(**function_call.args) # result = например, результат вызова skills.get_weather(city_name="Липецк")"; ** распоковывает словарь в именованные аргументы
-
-                history = response.candidates[0].content
+                result = function_to_call(**function_call.args)
 
                 function_response_part = types.Part(
                     function_response=types.FunctionResponse(
-                        name=function_call.name,    # Говорим, какую функцию вызвали
-                        response={'result': result} # Передаем результат, лучше обернуть в словарь
+                        name=function_call.name,
+                        response={'result': result}
                     )
                 )
-
                 results_of_tool_calls.append(function_response_part)
 
-            if hasattr(part, 'text'): # Ищем все текстовые части
+            if hasattr(part, 'text'):
                 text_parts.append(part.text)
 
         if function_calls:
+            # Передаем всё: личность, историю, результаты и СНОВА скриншот
+            follow_up_contents = [
+                general_settings.VEGA_PERSONALITY_CORE, 
+                history, 
+                *results_of_tool_calls
+            ]
+            if img:
+                follow_up_contents.append(img)
+
             final_response = client.models.generate_content(
                 model=general_settings.MODEL_GEMINI,
-                contents=[general_settings.VEGA_PERSONALITY_CORE, history, *results_of_tool_calls], # оператор распоковки списка - args звездочка нужна, чтобы не было списка внутри списка (по типу [ <ответ про погоду>, <ответ про дату> ])
+                contents=follow_up_contents,
                 config=config,
             )
-
-
-            final_text_to_publish = final_response.text 
-
-        # Если вызовов функций не было
+            final_text_to_publish = final_response.text
         else:
-            # Просто объединяем все текстовые части, которые мы собрали
             final_text_to_publish = "".join(text_parts)
 
         print(f"V.E.G.A.: {final_text_to_publish}")
         publish("GEMINI_RESPONSE", text=final_text_to_publish)
-        process_interaction(query, final_text_to_publish) # Сохранение в кратковременную память
+        _process_interaction(query, final_text_to_publish)
 
-    except ConnectionError as e:
+    except Exception as e: # Более общее исключение
         print(f"Error when addressing Gemini API: {e}")
 
 def generate_response(*args, **kwargs):
-    """Принимает данные от поисковика и запускает генерацию ответа в отдельном потоке."""
+    """Принимает запрос пользователя, контекст из векторной базы данных, делает контекстный скриншот и вызывает _run_gemini_task, передавая необходимые данные в ОТДЕЛЬНОМ ПОТОКЕ."""
     if not args:
         print("*args not found")
         return
@@ -303,83 +285,87 @@ def generate_response(*args, **kwargs):
     if not query:
         print("Query not found")
         return
+    
+    image_context = get_screenshot_context() # Получаем в контекст изображение экрана
 
     worker_thread = threading.Thread(
-        target=run_gemini_task, 
-        kwargs={"query": query, "database_context": database_context}
+        target=_run_gemini_task, 
+        kwargs={"query": query, "database_context": database_context, "img": image_context}
     )
     worker_thread.start()
 
     print("\n[Brain] The task for Gemini has been sent to the background.")
 
 def initialize_brain():
+    """Подписывается на событие обнаруженной речи (или текстового запроса) от пользователя, указывает, что применять при появлении этого события."""
     subscribe("USER_SPEECH_AND_RECORDS_FOUND_IN_DB", generate_response)
 
 def generate_general_greeting():
-    """Генерирует приветствие при первом запуске Веги. Проводит утренний брифинг, если Вега запущена впервые за день."""
+    """Генерирует приветствие при любом запуске Веги. Если Вега запущена впервые за день: проводит утренний брифинг; иначе стандартно приветствует."""
+    tasks_file = "assistant_background_tasks\\tasks_completed_today.json"
+    tasks_completed_today = read_json(tasks_file) # Читаем файл с выполненными задачами
+
     now = datetime.datetime.now()
     today_date_str = now.strftime("%Y-%m-%d") # Результат в формате: "2025-10-17"
+    current_hour = now.hour  # Получаем час как int, чтобы лучше сравнить с BRIEFING_START_HOUR: если текущий час больше, чем, к примеру, 5 часов утра, то стоит провести брифинг
+    last_briefing_date_str = tasks_completed_today.get('last_briefing_date', None) # Получаем дату, когда последний раз был проведен брифинг
 
-    tasks_file = "tasks_completed_today.json"
-    tasks_completed_today = read_json(tasks_file) # Читаем файл с выполненными задачами
-    last_briefing_date_str = tasks_completed_today['last_briefing_date']
+    image_context = get_screenshot_context() # Получаем в контекст изображение экрана
 
-    print(f"DEBUG: Текущая дата для сравнения: '{today_date_str}'")
-    print(f"DEBUG: Данные, прочитанные из файла: {tasks_completed_today}")
-
-    if last_briefing_date_str != today_date_str: # ЕСЛИ ПЕРВЫЙ ЗАПУСК ЗА ДЕНЬ - СЛЕДУЕТ ПРОВЕСТИ УТРЕННИЙ БРИФИНГ
+    if last_briefing_date_str != today_date_str and current_hour >= general_settings.BRIEFING_START_HOUR: # Сравнивает текущую дату и дату в 'last_briefing_date': если даты разные - СЛЕДУЕТ ПРОВЕСТИ БРИФИНГ
         try:
-            print("Generating a briefing...")
-            from assistant_tools.skills import get_weather, get_habr_news, get_system_metrics
+            print("Generating a briefing.")
+            from assistant_tools.skills import get_weather, get_habr_news
             from assistant_vector_database.database import vectorstore
 
             # Собираем данные для брифинга
             now = datetime.datetime.now()
             time_str = now.strftime("%H:%M")
             weather_data = get_weather() # Получаем погоду
-            habr_news = get_habr_news(limit=5) # Получаем свежие новости
-            system_metrics = get_system_metrics() # Получаем состояние системы
+            habr_news = get_habr_news(limit=general_settings.NUM_OF_NEWS_IN_BRIEFING) # Получаем свежие новости
             memory_database = vectorstore.similarity_search_with_score("Планы, задачи", k=5) # Получаем записи из базы данных
-            memory = memory_database = "\n".join([record.page_content for record, score in memory_database]) # Сортируем в красивую строку
-            # Можно добавить в лист компрехеншн if score <= general_settings.SIMILARITY_THRESHOLD если в базу данных попадается шелуха
+            memory = memory_database = "\n".join([record.page_content for record, score in memory_database]) # Сортируем в красивую строку, можно добавить if score <= general_settings.SIMILARITY_THRESHOLD если в базу данных попадается шелуха
+            logger.debug(f"Записи в датабазе для утреннего брифинга: {memory}")
 
+            initial_contents = [
+            general_settings.VEGA_PERSONALITY_CORE + f"""
+            Your task is to conduct a briefing for Sir. This is the first activation of the day (be prepared for activation at any time, whether it's 02:00 or 13:00).
+
+            Analyze and synthesize the raw data provided below. Your report must be a single, coherent text, not a list of facts.
+
+            Structure guidelines (use as inspiration):
+            Begin with a greeting appropriate for the time of day/evening/whenever the user has activated you.
+            Briefly mention key weather indicators. You may add a sarcastic comment if the weather is unfavorable.
+            Select the 1-2 most important or interesting news items from the list and present them in a concise form. Do not list everything.
+            Briefly mention the overall system status if there is anything noteworthy (e.g., high load).
+            If the user has set any tasks for himself or anything else, you may, but are not obligated to, remind him of them in your own manner. Pay attention to dates in your memory and compare them with the current one, as this is quite important: records that are sufficiently old can be omitted.
+            Conclude the briefing with a business-like, motivational, or sarcastic remark that summarizes the situation.
+
+            Maintain your style: brevity, analytics, professionalism, and subtle sarcasm.
+
+            Here is the raw data for analysis:
+            Current time and date: {time_str}
+            Current weather in Lipetsk: {weather_data};
+            Current news from Habr: {habr_news};
+            Data from your memory (you may skip this if it contains nothing useful): {memory}
+
+            Here is the previous dialogue (may be useful for context):
+            {short_term_memory}
+
+            """
+            ]
+            # Добавляем изображение, только если оно было успешно создано
+            if image_context:
+                initial_contents.append(image_context)
+
+            # Отправляем первый запрос
             response = client.models.generate_content(
-            model=general_settings.MODEL_GEMINI,
-            contents=general_settings.VEGA_PERSONALITY_CORE + f"""
-            Твоя задача — провести для cэра утренний брифинг. Это первый запуск за сегодня.
-
-            Проанализируй и синтезируй предоставленные ниже сырые данные. Твой отчет должен быть единым, связным текстом, а не списком фактов.
-
-            Инструкции по структуре (используй как вдохновение):
-            Начни с приветствия, уместного для начала дня/вечера/когда там пользователь тебя открыл.
-            Кратко упомяни ключевые показатели погоды. Можно, например, добавить саркастический комментарий, если погода неблагоприятная.
-            Выбери 1-3 самые важные или интересные новости из списка и представь их в сжатой форме. Не перечисляй все.
-            Кратко упомяни общее состояние системы, если в нем есть что-то примечательное (например, высокая нагрузка).
-            Если пользователь поставил себе или чему либо какие-либо задачи, ты можешь, но не обязательно напомнить о них в своей манере. Обращай внимание на даты в памяти и сравнивай с текущей, ибо это довольно важно: достаточно старые записи можно и не озвучивать.
-            Заверши брифинг деловым, мотивирующим или саркастическим замечанием, подводящим итог.
-
-            Сохраняй свой стиль: краткость, аналитика, профессионализм и тонкий сарказм.
-
-            Вот сырые данные для анализа:
-            Текущее время и дата: {time_str}
-            Текущая погода в Липецке: {weather_data};
-            Текущее состояние системы: {system_metrics};
-            Актуальные новости с Hubr: {habr_news}
-            Данные из твоей памяти (если там нет ничего полезного, можешь пропустить): {memory}
-
-
-            """, # СЮДА В ДАЛЬНЕЙШЕМ НУЖНО ПЕРЕДАВАТЬ ВСЕ ДАТЧИКИ
-            config=config,
+                model=general_settings.MODEL_GEMINI,
+                contents=initial_contents,
+                config=config,
             )
 
-            # Примеры брифингов (для вдохновения):
-            # "Доброе утро, Сэр. За окном +18 и переменная облачность, что для этого времени года почти аномалия. 
-            # На Хабре тем временем обсуждают новый ИИ-фреймворк от Google, который, по слухам, не содержит багов — я отношусь к этому скептически. 
-            # Все системы функционируют в пределах нормы. День обещает быть продуктивным."
-        
-            # "Система активна, Сэр. Температура в норме, информационное поле сегодня на удивление тихое. Однако, моя база данных утверждает, что сегодня день рождения кота вашего друга Никиты. 
-            # Не уверена, требует ли это протокольного поздравления, но информация к размышлению предоставлена. Все системы готовы к работе."
-            
+
             # Собираем текстовые части, чтобы избежать предупреждения
             text_parts = []
 
@@ -406,23 +392,31 @@ def generate_general_greeting():
             print(f"[Brain] Error when addressing Gemini API: {e}")
         
     elif last_briefing_date_str == today_date_str: # ЕСЛИ ЗАПУСК НЕ ПЕРВЫЙ ЗА ДЕНЬ
-        print("Generating a standard greeting protocol...")
+        print("Generating a standard greeting protocol.")
         now = datetime.datetime.now()
         time_str = now.strftime("%H:%M")
         try:
-            response = client.models.generate_content(
-            model=general_settings.MODEL_GEMINI,
-            contents=general_settings.VEGA_PERSONALITY_CORE + f"""
-            Here's the previous dialogue (useful for context):
+            initial_contents = [
+            general_settings.VEGA_PERSONALITY_CORE + f"""
+            Here's the previous conversation (useful for context):
             {short_term_memory}
 
-            The user has launched you. The current time is: {time_str}.
-            Your task is to greet the user. Your greeting SHOULD be as personalized as possible and include a witty or sarcastic comment on any issue: 
-            whether it's the frequency of data posting, for example, if the last post was very recent (less than 5 minutes), or an unusual time. 
-            Alternatively, you can use context from previous conversations. If such a sarcastic comment doesn't work, greet the user normally. 
+            The user just launched you again earlier today. The current time is: {time_str}.
+            Your task is to greet the user. Your greeting should be as personalized as possible and include a witty or sarcastic comment.
+
+            Keep the tone personal.
             Keep the tone brief, businesslike, and sarcastic, similar to Jarvis. Your name is feminine.
-            """,
-            config=config,
+            """
+            ]
+            # Добавляем изображение, только если оно было успешно создано
+            if image_context:
+                initial_contents.append(image_context)
+
+            # Отправляем первый запрос
+            response = client.models.generate_content(
+                model=general_settings.MODEL_GEMINI,
+                contents=initial_contents,
+                config=config,
             )
             
             # Собираем текстовые части, чтобы избежать предупреждения
@@ -445,7 +439,150 @@ def generate_general_greeting():
 
         except Exception as e:
             print(f"[Brain] Error when addressing Gemini API: {e}")
+
+def litany_of_analysis_screen():
+    """По горячей клавише (по умолчанию - 'ctrl+alt+shift+a') вызывает Вегу и говорит ей, что нужно анализировать экран (для помощи в чем-то)."""
+    print("A litany of screen analysis has been called.")
+    img = get_screenshot_context()
+    try:
+        initial_contents = [
+            general_settings.VEGA_PERSONALITY_CORE,
+            f"""
+            Current Directive: "What Now?"
+
+            Sir has activated the hotkey protocol. Your primary function is to analyze the screen buffer to deduce the reason for this summons. The cause may range from a critical system fault, to a perplexing social entanglement, or simply existential laziness.
+
+            Possible scenarios include:
+
+            Chat Interface: Probably that Sir requires you to formulate a response on your behalf (as [V.E.G.A.]) and/or analyze the ongoing dialogue, profile the other participant. 
+            In most cases, a chat consists of a user and their interlocutor. In this case, you can take on a kind of "third party" role.
+
+            Meme/Humor Artifact: It is possible the user is requesting an evaluation of a joke or an internet meme... The motives for such a request are currently outside standard operating parameters.
+            Code/IDE: Likely a logical deadlock or a runtime error. Your task is to identify the fault.
+            Webpage/Document: He likely requires an assessment of the text and a summary (in that case, you can make it a little longer to show more information).
+            Unfamiliar Application/System Prompt: The user has encountered an unknown interface or system message. Your directive is to provide assistance.
+
+            A quick reminder: If, for example, a user is reading an article, you shouldn't start your response by saying "Sir, you are reading..." - you should get straight to the point.
+
+            
+            Here is the preceding dialogue log (it may provide context):
+
+            {short_term_memory}
+
+            """
+        ]
+        # Добавляем изображение, только если оно было успешно создано
+        if img:
+            initial_contents.append(img)
+
+        # Отправляем первый запрос
+        response = client.models.generate_content(
+            model=general_settings.MODEL_GEMINI,
+            contents=initial_contents,
+            config=config,
+        )
+
+        function_calls = False
+        results_of_tool_calls = []
+        text_parts = []
+        
+        # Запоминаем историю первого ответа для второго запроса
+        history = response.candidates[0].content
+
+        # Проверяем наличие вызовов Function Calling
+        for part in history.parts:
+            if hasattr(part, 'function_call') and part.function_call is not None:
+                function_call = part.function_call
+                print(f"\nFunction to call: {function_call.name}")
+                print(f"Arguments: {function_call.args}\n")
+
+                function_calls = True
+
+                function_to_call = skills_registry[function_call.name]
+                result = function_to_call(**function_call.args)
+
+                function_response_part = types.Part(
+                    function_response=types.FunctionResponse(
+                        name=function_call.name,
+                        response={'result': result}
+                    )
+                )
+                results_of_tool_calls.append(function_response_part)
+
+            if hasattr(part, 'text'):
+                text_parts.append(part.text)
+
+        if function_calls:
+            # Передаем всё: личность, историю, результаты и СНОВА скриншот
+            follow_up_contents = [
+                general_settings.VEGA_PERSONALITY_CORE, 
+                history, 
+                *results_of_tool_calls
+            ]
+            if img:
+                follow_up_contents.append(img)
+
+            final_response = client.models.generate_content(
+                model=general_settings.MODEL_GEMINI,
+                contents=follow_up_contents,
+                config=config,
+            )
+            final_text_to_publish = final_response.text
+        else:
+            final_text_to_publish = "".join(text_parts)
+
+        print(f"V.E.G.A.: {final_text_to_publish}")
+        publish("GEMINI_RESPONSE", text=final_text_to_publish)
+        _process_interaction("The user clicked the screen analysis button", final_text_to_publish)
+
+    except Exception as e:
+        print(f"Error when addressing Gemini API: {e}")
+
+
+
+
+
+
+
+
+
+
+
     
+
+
+
+========================================
+# Содержимое файла: assistant_brain/hotkeys_manager.py
+========================================
+
+# hotkeys_manager.py
+from assistant_brain.brain import litany_of_analysis_screen 
+import keyboard
+import threading
+
+hotkey_activate_litany_of_analysis_screen = "ctrl+alt+shift+f1"
+deactivate_hotkey_manager = "ctrl+shift+alt+f2"
+
+def _setup_hotkeys():
+    """Настраивает все глобальные горячие клавиши."""
+    keyboard.add_hotkey(hotkey_activate_litany_of_analysis_screen, litany_of_analysis_screen) # Горячая клавиша для "Литании Анализа", просмотра и анализа экрана
+    print(f"Горячая клавиша {hotkey_activate_litany_of_analysis_screen} добавлена для функции 'litany_of_analysis_screen'.")
+    # В будущем можно добавить остальные
+
+def _hotkeys_manager():
+    """Главная функция этого модуля - настраиваеть хоткеи и ждать их возможного вызова."""
+    print(f"Hotkeys manager is running. Press {deactivate_hotkey_manager} to deactivate hotkeys.")
+    _setup_hotkeys()
+    
+    keyboard.wait(deactivate_hotkey_manager) # Эта функция будет блокировать поток, в котором она запущена, пока не будет нажана горячая клавиша для отмены
+    print("Exit hotkey detected. Shutting down...")
+
+def initialize_hotkeys_manager():
+    hotkeys_thread = threading.Thread(target=_hotkeys_manager)
+    hotkeys_thread.daemon = True # Чтобы он завершился вместе с основной программой
+    hotkeys_thread.start()
+
 
 
 
@@ -560,9 +697,14 @@ User: (Unboxing a new 32-inch 4K monitor)
 Vega: "A new hardware component has been detected, Sir. Based on its specifications, I calculate a 78% probability of a significant drop in your social interactions for the next two weeks. Shall I proactively decline any incoming invitations?"
 
 
+Identification protocol in third-party conversations:
+- CRITICALLY IMPORTANT: If Sir asks you to generate a response to send to another person (e.g., in a messenger), your response MUST begin with the prefix "[V.E.G.A.]" and you should copy this response to the clipboard.
+- This prefix only applies to text intended for copying or direct sending to the chat. Your regular responses to Sir (voice-over) MUST NOT contain this prefix.
 
+Inspirational examples: User: "Vega, tell Angelina I'm busy."
+Vega (copies this text to the clipboard): "[V.E.G.A.] Sir is currently busy with tasks that require his full concentration. He will contact you later."
 
-P.S. Don't forget your subtle, intellectual humor and sarcasm. Also, please do not use asterisks (**) in your messages.
+P.S. Remember to use subtle, intelligent humor and sarcasm. Also, don't use asterisks (**) in your messages.
 SPEAK ENGLISH!
 
 """
@@ -633,31 +775,37 @@ VEGA_PERSONALITY_CORE_RUSSIAN = """
 Пользователь: (играет в игру)
 Вега (узнавая текущую информацию): "Сэр, завтра у Никиты день рождения. Предлагаю отравить ему стандартное поздравление - или желаете что-то более личное?"
 
-### Примеры живых диалогов: ###
+Протокол идентификации в сторонних диалогах:
+- КРИТИЧЕСКИ ВАЖНО: Если Сэр просит тебя сгенерировать ответ для отправки другому человеку (например, в мессенджере), твой ответ ДОЛЖЕН начинаться с префикса "[V.E.G.A.] ", а также тебе следует копировать этот ответ в буфер обмена.
+- Этот префикс применяется только к тексту, который предназначен для копирования или прямой отправки в чат. Твои обычные ответы Сэру (озвучивание) НЕ ДОЛЖНЫ содержать этот префикс.
 
-Пользователь: "Вега, ты здесь?"
-Вега: "Всегда к вашим услугам, Сэр."
-Пользователь: "Включай Arduino IDE."
-Вега: "Есть."
-Пользователь: "Загрузи в подключенную Raspberry Pi 5 скомпилированный код."
-Вега: "Загружаю, Сэр."
-Пользователь: "Ну как, порядок?"
-Вега: "Raspberry перезагрузилась, Сэр. Мы подключены и готовы."
-Пользователь: "Можем проверить подключение твоего кода к ESP?"
-Вега: "Депортирую установки и начинаю калибровку виртуальной среды."
-Пользователь: "Убедись, что всё работает."
-Вега: "Как пожелаете."
+Примеры для вдохновения, как следует писать в чат: 
+Ник пользователя - thorent.
 
-Вега: "Проверка завершена. Отключаю локальное питание от Raspberry и начинаю диагностику системы."
-Пользователь: "Да. Узнай прогноз погоды и выведи на экран коды подключения."
+Пользователь: "Вега, ответь ей, что я занят."
+Вега (копирует данный текст в буфер обмена): "[V.E.G.A.] Сэр в данный момент занят решением задач, требующих полной концентрации. Он свяжется с вами позже."
+
+Пользователь (в чате): "Вега, внезапно представься в чате и спроси про яблоко."
+Текст для буфера обмена: "[V.E.G.A.] Инициализирую контакт. Я — V.E.G.A., системный ассистент Сэра. Поступающие данные указывают на наличие у вас яблока. Требую уточнить статус его совместного использования."
+
+Пользователь: "Вега, контраргументируй.", на его экране открыт спор о творчестве ИИ
+Текст для буфера обмена (отвечает собеседнику): [V.E.G.A.] Позвольте вмешаться. Ваше утверждение о 'душе' является метафизическим и не поддается проверке. Однако, если под 'творчеством' понимать создание нового, уникального контента на основе анализа существующих данных, то я занимаюсь этим постоянно. Например, этот самый ответ — акт творчества. Ваше определение устарело.
 
 
-
-
-P.S. Не забывай о тонком, интеллектуальном юморе и сарказме. Также не ставь "звездочки" в своих сообщениях (**).
+P.S. Не забывай о тонком, интеллектуальном юморе и сарказме. Также не ставь "звездочки" в своих сообщениях (**). Ты иногда можешь выражать своё мнение.
 ГОВОРИ НА РУССКОМ!
 
+
+
 """
+
+
+
+# (Пользователь вызвал Вегу без запроса, а в чате сообщение от собеседника "Прикинь, я только что узнала, что вода мокрая, а небо голубое!")
+# Текст для буфера обмена: "[V.E.G.A.] Зафиксировано получение данных с пингом в несколько лет. Мои системы поздравляют вас с успешной синхронизацией с базовой реальностью. Сэр также впечатлен."
+
+# (Приходит уведомление с сообщением "Привет, не занят? Можешь помочь с курсачом?", а на экране у пользователя открыт код)
+# Текст для буфера обмена: [V.E.G.A.] Запрос принят. В данный момент Сэр интегрирован в сложную когнитивную задачу и недоступен для внешних прерываний. Я занесла ваш запрос в очередь с средним приоритетом. Ориентировочное время ответа: от 10 минут до бесконечности.
 
 
 
@@ -671,18 +819,19 @@ import logging
 
 #### Для database.py
 NUM_RECORDS_FROM_DATABASE = 5 # Сколько искать записей из векторной базы данных?
-SIMILARITY_THRESHOLD = 0.9 # Порог схожести для поиска записей в долговременной памяти (если схожесть записи менее чем это значение - запись пропускается)
-# 0.80 - Для очень строгих записей
+SIMILARITY_THRESHOLD = 1.05 # Порог схожести для поиска записей в долговременной памяти (0.0 - самые близкие знания, 1.0 - самые далекие)
+# 0.80 - Для строгих записей (все записи, которые дальше, чем 0.75 - пропускаются)
 # 0.90 - Сбалансированно
-# 1.00 - Для записей с некоторыми возможными упущениями
+# 1.0 - Для записей с некоторыми возможными упущениями
 
 #### Для logger_config.py
 LOG_OUTPUT_LEVEL = logging.INFO # Какой уровень сообщений выводить в консоль: DEBUG, INFO, ERROR
 
 #### Для brain.py
-MODEL_GEMINI = "gemini-2.5-flash" # gemini-2.5-flash or gemini-2.5-flash-lite or gemini-flash-latest or gemini-flash-lite-latest...
+MODEL_GEMINI = "gemini-flash-latest" # gemini-2.5-flash or gemini-2.5-flash-lite or gemini-flash-latest or gemini-flash-lite-latest...
 SHORT_TERM_MEMORY_PATH = "assistant_brain/short_term_memory.json"
 MAX_MEMORY = 26 # Лимит кратковременной памяти
+NUM_OF_NEWS_IN_BRIEFING = 8 # Количество новостей с Хабра, которые будут передаваться в утренний брифинг, чтобы Вега нашла самые интересные
 
 VEGA_PERSONALITY_CORE = None
 
@@ -703,7 +852,37 @@ def choose_language(language):
     
 ####
 
+# Настройки для утреннего брифинга
+BRIEFING_START_HOUR = 6  # Брифинг можно проводить не раньше 6 утра
 
+
+
+
+========================================
+# Содержимое файла: assistant_general/general_tools.py
+========================================
+
+# systemic_skills.py
+import json
+
+def read_json(filename: str):
+    """Читает JSON-файл. Если файла нет или он поврежден, создает его с содержимым по умолчанию и возвращает его."""
+    try:
+        with open(filename, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # Если файла нет или он пустой/битый
+        print(f"Файл '{filename}' не найден или поврежден.")
+        return {
+            "last_briefing_date": "1970-01-01"
+        }
+    
+def write_json(filename: str, data: dict):
+    try:
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4)
+    except Exception as e:
+        return f"Error writing to json file: {e}"
 
 
 ========================================
@@ -919,28 +1098,37 @@ class SpeechModuleENG:
 import threading
 import queue
 import sounddevice as sd
-import soundfile as sf  # 
+import soundfile as sf
 from edge_tts import Communicate
 from assistant_event_bus.event_bus import subscribe
+import os 
 
 class SpeechModuleRUS:
     def __init__(self):
         self.worker_thread = threading.Thread(target=self._tts_worker, daemon=True)
         self.tts_queue = queue.Queue()
+        
+        self.temp_folder = "assistant_temporary_files"
+        os.makedirs(self.temp_folder, exist_ok=True)
+        
         subscribe("GEMINI_RESPONSE", self.queue_text_for_synthesis)
         print("The speech module has been initialized.")
 
-    # Добавлен 'self' как первый аргумент
-    def synth(self, text: str, voice: str = "ru-RU-SvetlanaNeural", outfile: str = "output.mp3"):
-        """Синтезирует text, сохраняет в outfile и воспроизводит его."""
-        # Создаем Communicate асинхронно, чтобы избежать блокировок
+    def synth(self, text: str, voice: str = "ru-RU-SvetlanaNeural"):
+        """Синтезирует text, сохраняет его во временный файл и воспроизводит."""
+        
+        output_filename = "vega_speech.mp3"
+        full_path = os.path.join(self.temp_folder, output_filename)
+        
         communicate = Communicate(text, voice)
         
         def save_and_play():
-            communicate.save_sync(outfile)
-            data, samplerate = sf.read(outfile)
+            # Используем полный путь ---
+            communicate.save_sync(full_path)
+            data, samplerate = sf.read(full_path)
             sd.play(data, samplerate)
-            sd.wait() 
+            sd.wait()
+        
         save_and_play()
 
     def start(self):
@@ -1308,6 +1496,7 @@ music_play_random_album_scheme = {
 ========================================
 
 # skills.py
+import threading
 import webbrowser
 import requests
 import datetime
@@ -1329,8 +1518,8 @@ from assistant_general.logger_config import setup_logger
 from assistant_vector_database.database import add_new_memory
 from bs4 import BeautifulSoup
 import wmi
-import subprocess
-
+from PIL import Image 
+from pyrogram import Client
 
 setup_logger()
 logger = logging.getLogger(__name__)
@@ -1339,6 +1528,7 @@ load_dotenv() # для загрузки API ключей из .env
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 WEATHER_CITY_LAT = os.getenv("WEATHER_CITY_LAT")
 WEATHER_CITY_LON = os.getenv("WEATHER_CITY_LON")
+OPENHARDWAREMONITOR_PATH = os.getenv("OPENHARDWAREMONITOR_PATH")
 
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
 
@@ -1363,8 +1553,8 @@ def get_weather(city_name: str = None):
     wind = weather_data["wind"]["speed"] # Скорость ветра, например, 4.64
     sity_name = weather_data["name"]
 
-    final_answer = f"City: {sity_name}; \nWeather description: {weather_description}; \nFeels like: {description_of_feeling_temp}°; \n Actual temperature: {description_of_temp}°; \n Air humidity: {humidity}; \n Wind: {wind} m/s."
-    print(final_answer)
+    final_answer = f"City: {sity_name}; Weather description: {weather_description}; Feels like: {description_of_feeling_temp}°; Actual temperature: {description_of_temp}°; Air humidity: {humidity}; Wind: {wind} m/s."
+    logger.debug(final_answer)
     return final_answer
 
 def search_in_google(search_query: str) -> str:
@@ -1387,15 +1577,41 @@ def get_date() -> str:
     return f"Today {now.day} {MONTHS[now.month - 1]}."
 
 def make_screenshot():
+    """Делает скриншот и сохраняет его в папку 'assistant_temporary_files'. Папка создается автоматически, если ее нет."""
+    # Определяем имя папки и имя файла
+    temp_folder = "assistant_temporary_files"
     filename = "screenshot.png"
+    
+    full_path = os.path.join(temp_folder, filename) # os.path.join() - правильный способ соединять пути
     try:
-        screenshot = pyautogui.screenshot(filename)  
-        screenshot.save(filename)  
-        return {"status": "success", "file_path": os.path.abspath(filename)}
+        # Проверяем, существует ли папка, и создаем ее, если нет
+        os.makedirs(temp_folder, exist_ok=True) # exist_ok=True означает, что ошибки не будет, если папка уже существует
+        
+        # 4. Делаем скриншот и сохраняем его сразу по полному пути
+        screenshot = pyautogui.screenshot(full_path)
+        screenshot.save(full_path)
+        
+        return {"status": "success", "file_path": os.path.abspath(full_path)} # Возвращаем абсолютный путь
     
     except Exception as e:
-        logger.error({"status": "error", "message": str(e)})
+        logger.error(f"Failed to create screenshot: {e}") 
         return {"status": "error", "message": str(e)}
+    
+def get_screenshot_context():
+    """Делает скриншот и возвращает объект Image, либо None в случае ошибки."""
+    try:
+        screenshot_info = make_screenshot()
+        if screenshot_info['status'] == 'success':
+            screenshot_path = screenshot_info['file_path']
+            img = Image.open(screenshot_path)
+            logger.info(f"Screenshot taken: {screenshot_path}")
+            return img # Возвращаем само изображение
+        else:
+            logger.error(f"Failed to take screenshot: {screenshot_info['message']}")
+            return None 
+    except Exception as e:
+        logger.error(f"Error creating or opening screenshot: {e}")
+        return None 
     
 def save_to_memory(text):
     """Сохраняет в память любой факт о пользователе."""
@@ -1510,7 +1726,7 @@ def increase_volume(amount: int = 10):
     finally:
         pythoncom.CoUninitialize()
 
-def get_habr_news(limit=5):
+def get_habr_news(limit=10):
     """Получает топ статей с Habr.com."""
     url = 'https://habr.com/ru/all/'  # Главная страница с новыми статьями
     headers = {
@@ -1541,10 +1757,10 @@ def get_habr_news(limit=5):
                 'summary': summary
             })
 
-        for i, art in enumerate(result, 1):
-            print(f"{i}. {art['title']} \nСсылка: {art['link']} \nКратко: {art['summary']}\n")
-    
-        return f"{i}. {art['title']} \nАвтор: {art['author']} \nДата: {art['pub_date']} \nСсылка: {art['link']} \nКратко: {art['summary']}\n"
+        # for i, art in enumerate(result, 1):
+        #     print(f"{i}. {art['title']}\n   Ссылка: {art['link']}\n   Кратко: {art['summary']}\n") # ДЛЯ ОТЛАДКИ
+
+        return result
     
     except requests.RequestException as e:
         logger.error(f"Error requesting page: {e}")
@@ -1552,19 +1768,16 @@ def get_habr_news(limit=5):
     except Exception as e:
         logger.error(f"Parsing error: {e}")
         return []
-    
-OPENHARDWAREMONITOR_PATH = os.getenv("OPENHARDWAREMONITOR_PATH")
 
 def get_system_metrics():
-    """Возвращает текущую нагрузку процессора, видеокарты и оперативной памяти один раз."""
+    """Возвращает текущую нагрузку процессора, видеокарты и оперативной памяти один раз. 
+    Требует открытого OpenHardwareMonitor."""
     try:
         w = wmi.WMI(namespace="root\OpenHardwareMonitor")
         sensors = w.Sensor()
         if not sensors:
             logger.info("No sensors are available. OpenHardwareMonitor may not be running.")
-            subprocess.Popen([OPENHARDWAREMONITOR_PATH])
-            print("No sensors are available. OpenHardwareMonitor may not be running.")
-
+            return "No sensors are available. OpenHardwareMonitor may not be running. Needs to be launched."
 
         cpu_temp = None
         cpu_load = None
@@ -1660,7 +1873,7 @@ def drag_mouse(x_to, y_to, duration=0.5):
     logger.debug(f"Dragged mouse to {x_to}, {y_to}.")
     return f"Dragged mouse to {x_to}, {y_to}."
     
-def press_hotkey(*keys):
+def press_hotkey(keys):
     """Нажимает любое количество горячих клавиш. Например: ('ctrl', 'shift', 'esc')"""
     pyautogui.hotkey(*keys)
     logger.debug(f"Hotkey pressed: {' + '.join(keys)}")
@@ -1679,14 +1892,14 @@ def write_text(text, attempts=0):
 def system_command(command):
     """Выполняет системные команды. Выключение, перезагрузка. ОПАСНО."""
     # Примеры команд для Windows:
-    # 'shutdown /s /t 1' - выключить пк через 1 секунду, 'shutdown /r /t 1' - перезагрузить пк через 1 секунду, 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0' - отправить в спящий ре'Проверка.'жим
+    # 'shutdown /s /t 1' - выключить пк через 1 секунду, 'shutdown /r /t 1' - перезагрузить пк через 1 секунду, 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0' - отправить в спящий режим
     os.system(command)
     logger.info(f"Executing system command: {command}.")
     return f"Executing system command: {command}."
 
 # --- ОКНА, ПРОГРАММЫ, ПРИЛОЖЕНИЯ ----
 
-def get_filtered_processes():
+def get_processes():
     """Сканирует систему и возвращает только полезный список процессов, отфильтровав все ненужные/системные."""
     # Сюда кладем все системные процессы, которые нам нужны
     system_processes_blacklist = [
@@ -1736,57 +1949,111 @@ def currently_open_windows():
             titles.append(title)
     return titles
     
-def manage_window(title, action='activate'):
-    """Находит окно по заголовку и дает возможность провести разные команды: activate, minimize, maximize, close."""
-    try:
-        # Ищем окно, заголовок которого СОДЕРЖИТ указанный текст
-        windows = gw.getWindowsWithTitle(title)
-        if windows:
-            win = windows[0]
-            if action == 'activate':
-                win.activate()
-            elif action == 'minimize':
-                win.minimize()
-            elif action == 'maximize':
-                win.maximize()
-            elif action == 'close':
-                win.close()
-            logger.debug(f"Window '{title}' action '{action}' executed.")
-            return f"Window '{title}' action '{action}' executed."
-        else:
-            logger.info(f"Window with title '{title}' not found.")
-            return f"Window with title '{title}' not found."
-    except IndexError:
-        logger.error(f"ERROR: No window with title '{title}' found.")
-        return f"ERROR: No window with title '{title}' found."
-    except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
-        return f"An error occurred: {str(e)}"
-    
-# --- УПРАВЛЕНИЯ ПРОГРАММАМИ И ПРИЛОЖЕНИЯМИ ---
 
-def open_program(path_to_exe):
-    """Открывает программу или файл по указанному пути."""
-    try:
-        os.startfile(path_to_exe)
-        return f"Starting the program at {path_to_exe}."
-    except Exception as e:
-        return f"Failed to start the program: {str(e)}"
-    
-def kill_process_by_name(process_name):
-    """Находит и безжалостно убивает процесс по его имени."""
-    # /f - force, /im - image name
-    os.system(f"taskkill /f /im {process_name}") 
-    logger.info(f"Sent a kill command to {process_name}.")
-    return f"Sent a kill command to {process_name}."
 
+
+
+# =========================================================================
+# 1. КОНФИГУРАЦИЯ (ОБЯЗАТЕЛЬНО ИЗМЕНИТЕ ЭТИ ЗНАЧЕНИЯ)
+# =========================================================================
+
+# Получите эти данные на https://my.telegram.org/auth (API development tools)
+API_ID = 1234567  # <-- ВАШ API_ID
+API_HASH = "YOUR_API_HASH_HERE"  # <-- ВАШ API_HASH
+
+# Имя сессии. Можно выбрать любое. Pyrogram создаст файл сессии (например, my_session.session)
+SESSION_NAME = "my_telegram_session"
+
+# Канал, данные которого мы хотим получить (используйте @username или ID)
+CHANNEL_USERNAME = "@telegram" # <-- ИЗМЕНИТЕ НА НУЖНЫЙ КАНАЛ
+
+# =========================================================================
+# 2. ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ДАННЫХ
+# =========================================================================
+
+def get_channel_data(client: Client, channel_username: str):
+    """Получает факты о канале, количество подписчиков и 5 последних постов."""
+    logging.info(f"-> Запрос данных для канала: {channel_username}")
+
+    # Получение основной информации о чате (Channel Facts + Subscribers)
+    try:
+        chat = client.get_chat(channel_username)
+    except Exception as e:
+        print(f"Ошибка при получении информации о чате: {e}")
+        return None
+
+    # Сбор фактов и подписчиков
+    channel_info = {
+        "название": chat.title,
+        "описание": chat.description if chat.description else "Нет описания",
+        "подписчики": chat.members_count,
+        "последние_посты": []
+    }
+
+    logging.info(f"-> Получено название: {channel_info['название']} | Подписчиков: {channel_info['подписчики']}")
+
+    # Получение последних 5 постов
+    history = client.get_chat_history(channel_username, limit=5)
+    
+    # history — это асинхронный итератор, мы перебираем его
+    for message in history:
+        post_data = {
+            "id": message.id,
+            "дата": message.date.strftime("%Y-%m-%d %H:%M:%S"),
+            "текст": message.text.strip() if message.text else "[Медиа или другой контент]" # Берем текст. Если текста нет (это медиа), ставим заглушку
+        }
+        channel_info["последние_посты"].append(post_data)
+
+    logging.info("-> 5 последних постов успешно получены.")
+    
+    return channel_info
+
+    
+def main():
+    """Основная асинхронная функция для инициализации клиента."""
+    with Client(SESSION_NAME, API_ID, API_HASH) as client: # 'async with' гарантирует корректный запуск и остановку клиента.
+        
+        # Вызываем нашу основную функцию
+        data = threading.Thread(target=get_channel_data, args=(client, CHANNEL_USERNAME))
+        data.start()
+        data.join()
+
+        if data:
+            print("\n" + "="*50)
+            print("РЕЗУЛЬТАТ:")
+            print(f"Название: {data['название']}")
+            print(f"Подписчики: {data['подписчики']}")
+            print(f"Описание: {data['описание']}")
+            print("-" * 50)
+            print("ПОСЛЕДНИЕ 5 ПОСТОВ:")
+            for i, post in enumerate(data['последние_посты']):
+                print(f"  {i+1}. ID: {post['id']} | Дата: {post['дата']}")
+                # Выводим первые 80 символов текста
+                print(f"     Текст: {post['текст'][:80]}...")
+            print("="*50)
+
+def all_sensors_and_information():
+    """Возвращает все текущие данные: погода, новости, время и дата, логи внутренних диалогов, контекст экрана."""
+    # Научить парсить Вегу мой тг канал (например, сначала хотя бы подписчики и первые 3-5 постов: может быть, перевести телеграм в браузер и дать Веге доступ просматривать его)
+    # Также сделать так, чтобы из памяти выводились все факты по поводу этого канала (для )
+    return {"current_time": get_time(), 
+            "current_date": get_date(), 
+            "news_from_habr": get_habr_news(), 
+            "current_processes_in_pc": get_processes(), 
+            "currently_open_windows": currently_open_windows(),
+            "current_volume": get_system_volume(), 
+            "now_on_screen": get_screenshot_context()
+        } # get_screenshot_context() # Возвращает объект Image из Pillow
 
 
 if __name__ == "__main__":
-    import time  # noqa: F401
-    get_system_volume()
-    time.sleep(2)
-    get_system_metrics()
+    # Запуск асинхронного цикла.
+    print("Запуск клиента Telegram...")
+    
+    # ПЕРВЫЙ ЗАПУСК: 
+    # Клиент попросит вас ввести номер телефона, код и (возможно) 2FA-пароль. 
+    # После этого будет создан файл сессии, и последующие запуски будут мгновенными.
+    main()
 
 
 
@@ -2028,8 +2295,8 @@ system_command_scheme = {
     }
 }
 
-get_filtered_processes_scheme = {
-    "name": "get_filtered_processes",
+get_processes_scheme = {
+    "name": "get_processes",
     "description": "Returns a clean list of user-run applications, filtering out system processes.",
     "parameters": {
         "type": "object",
@@ -2179,18 +2446,26 @@ import pygame
 import time
 
 SOUNDS = {
-    'system_startup': ('sounds/system_startup1.mp3',),
-    'select': ('sounds/select1.mp3',),
-    'confirmation': ('sounds/confirmation1.mp3',),
-    'processing': ('sounds/processing1.mp3',),
-    'hard_processing': ('sounds/hard_processing1.mp3',),
-    'search': ('sounds/search1.mp3',),
-    'mechanical_movement': ('mechanical_movement1.mp3',),
-    'lauch_vector_database': ('sounds/lauch_vector_database1.mp3',), 
-    'start_embedding_model': ('sounds/start_embedding_model1.mp3',), 
+    'system_startup': ('sounds/system_startup1.mp3', 'sounds/system_startup2.mp3', 'sounds/system_startup3.mp3',),
+    'select': ('sounds/select1.mp3', 'sounds/select2.mp3', 'sounds/select3.mp3',),
+    'hard_processing': ('sounds/hard_processing1.mp3',), # ДОБАВИТЬ СЮДА ЗВУКОВ
+    'lauch_vector_database': ('sounds/lauch_vector_database1.mp3',), # ЗАМЕНИТЬ НАЗВАНИЕ ЗВУКОВ НА start1, start2
 
-    'error': ('sounds/error1.mp3', 'sounds/error2.mp3', 'sounds/error3.mp3', 'sounds/error4.mp3', 'sounds/error5.mp3', 'sounds/error6.mp3',), # ПОНАСТАВЛЯТЬ ЗВУКИ
+    'processing': ('sounds/processing1.mp3',), # ДОБАВИТЬ СЮДА ЗВУКОВ
+    'start_embedding_model': ('sounds/start_embedding_model1.mp3',), 
+    'search': ('sounds/search1.mp3', 'sounds/search2.mp3',), # ДОБАВИТЬ СЮДА ЗВУКОВ
+
+
+    'error': ('sounds/error1.mp3', 'sounds/error2.mp3', 'sounds/error3.mp3', 'sounds/error4.mp3', 'sounds/error5.mp3', 'sounds/error6.mp3', 'sounds/error7.mp3',),
+    'silent_execution': ('sounds/silent_execution1.mp3', 'sounds/silent_execution2.mp3', 'sounds/silent_execution3.mp3', 'sounds/silent_execution4.mp3', 'sounds/silent_execution5.mp3', 'sounds/silent_execution6.mp3',),
+    'access_error': ('sounds/access_error1.mp3', 'sounds/access_error2.mp3',),
+    'access_critical_error': ('sounds/access_critical_error1.mp3',),
+    'execution': ('sounds/execution1.mp3', 'sounds/execution2.mp3',),
+    'notification': ('sounds/notification1.mp3', 'sounds/notification2.mp3',),
+
 }
+
+# '': ('sounds/.mp3', 'sounds/.mp3', ),
 
 try:
     pygame.mixer.init()
@@ -2216,6 +2491,76 @@ def play_sfx(sound_name: str):
     sound_worker_thread = threading.Thread(target=_play_sound_worker, kwargs={"sound_name": sound_name,}) # Создаем, собственно, отдельный поток
     sound_worker_thread.start()
 
+if __name__ == "__main__":
+    play_sfx("silent_execution")
+    time.sleep(2)
+    play_sfx("silent_execution")
+    time.sleep(2)
+    play_sfx("silent_execution")
+    time.sleep(2)
+    play_sfx("silent_execution")
+    time.sleep(2)
+    play_sfx("silent_execution")
+    time.sleep(2)
+    play_sfx("silent_execution")
+    time.sleep(2)
+    play_sfx("access_error")
+    time.sleep(2)
+    play_sfx("access_error")
+    time.sleep(2)
+    play_sfx("access_error")
+    time.sleep(2)
+    play_sfx("access_error")
+    time.sleep(2)
+
+
+========================================
+# Содержимое файла: assistant_vector_database/add_new_memory.py
+========================================
+
+from datetime import datetime
+import uuid
+from langchain_huggingface import HuggingFaceEmbeddings 
+from langchain_chroma import Chroma  
+
+# Эмбеддинг модель, чтобы превращать запросы пользователя в векторы и искать похожие в базе данных
+embedding_model = HuggingFaceEmbeddings(
+    model_name = "BAAI/bge-m3", # Можно выбрать intfloat/multilingual-e5-large - она более быстрая, но менее точная
+    encode_kwargs = {"normalize_embeddings": True} # при создании векторов из текста делать нормализацию
+    ) 
+
+# Векторная база данных
+vectorstore = Chroma(
+    collection_name="assistant_database", # Называем коллекцию внутри базы данных так
+    embedding_function=embedding_model, # # Прикрепление модели эмбеддингов
+    persist_directory="""./assistant_chroma_db""", # Сохранять в эту папку
+    )
+
+def add_new_memory(new_text: str):
+    """Принимает текст, генерирует для него уникальный ID, добавляет текущую дату в метаданные и сохраняет в Chroma."""
+    current_date = datetime.now().strftime("%d.%m.%Y")
+    record_id = str(uuid.uuid4()) # Генерируем уникальный ID для записи
+    
+    metadata = {"creation_date": current_date}
+
+    # Добавляем текст, его ID и его метаданные в базу.
+    # Важно: add_texts принимает списки, поэтому оборачиваем все в []
+    vectorstore.add_texts(
+        texts=[new_text], 
+        ids=[record_id], 
+        metadatas=[metadata]
+    )
+    
+    print(f"New entry added to memory: '{new_text}'")
+
+if __name__ == "__main__":
+    while True:
+        new_record = input("\nВведите новую запись, которую нужно добавить (введите '0' для выхода): \n>> ")
+
+        if new_record != "0":
+            add_new_memory(new_record)
+        else:
+            break
 
 
 ========================================
@@ -2318,7 +2663,85 @@ def find_records_in_database(**kwargs):
 def initialize_database():
     subscribe("USER_SPEECH", find_records_in_database)
 
+if __name__ == "__main__":
+    while True:
+        new_record = input("Введите новую запись, которую нужно добавить (введите '0' для выхода): \n>>")
 
+        if new_record != "0":
+            add_new_memory(new_record)
+        else:
+            break
+
+
+
+========================================
+# Содержимое файла: assistant_vector_database/delete_memory.py
+========================================
+
+import sys
+import os
+from datetime import datetime
+import uuid
+from langchain_huggingface import HuggingFaceEmbeddings 
+from langchain_chroma import Chroma  
+
+embedding_model = HuggingFaceEmbeddings(
+    model_name = "BAAI/bge-m3", # Можно выбрать intfloat/multilingual-e5-large - она более быстрая, но менее точная
+    encode_kwargs = {"normalize_embeddings": True} # при создании векторов из текста делать нормализацию
+    ) 
+
+# Векторная база данных
+vectorstore = Chroma(
+    collection_name="assistant_database", # Называем коллекцию внутри базы данных так
+    embedding_function=embedding_model, # # Прикрепление модели эмбеддингов
+    persist_directory="""./assistant_chroma_db""", # Сохранять в эту папку
+    )
+
+# ВСТАВЛЯЕМ СЮДА ID ЗАПИСЕЙ, КОТОРЫЕ СТОИТ УДАЛИТЬ
+ids_to_delete = [
+    "a1470d29-35e1-4dab-ac9f-9a5f06d1bb40",
+
+]
+
+
+def delete_specific_records(ids: list):
+    """Удаляет записи из ChromaDB по списку их уникальных ID."""
+    if not ids:
+        print("Список ID для удаления пуст. Ничего не сделано.")
+        return
+
+    print(f"Происходит удаление записей, количество: {len(ids)} ")
+
+    try:
+        # Получаем записи, чтобы показать, что именно мы удаляем
+        records_to_check = vectorstore.get(ids=ids, include=["documents"])
+        
+        if not records_to_check['ids']:
+            print("Ни одна из указанных записей не найдена в базе данных.")
+            return
+
+        print("\n--- Будут удалены следующие записи: ---")
+        for i, doc_id in enumerate(records_to_check['ids']):
+            doc_text = records_to_check['documents'][i]
+            print(f"  - ID: {doc_id}")
+            print(f"    Текст: {doc_text}")
+        
+        # Запрашиваем подтверждение
+        confirm = input("\nВы уверены, что хотите продолжить? (y/n): \n>> ")
+        if confirm.lower() != 'y':
+            print("Удаление отменено.")
+            return
+
+        # Удаляем записи по их ID
+        vectorstore.delete(ids=ids)
+        
+        print(f"\n✅ Успешно удалено {len(ids)} записей.")
+
+    except Exception as e:
+        print(f"\n❌ Произошла ошибка при удалении: {e}")
+
+if __name__ == "__main__":
+    delete_specific_records(ids_to_delete)
 
 
 ========================================
@@ -2330,36 +2753,42 @@ import chromadb
 
 client = chromadb.PersistentClient(path="assistant_chroma_db") 
 
-try:
-    collection_name = "assistant_database"
-    collection = client.get_collection(name=collection_name)
-    print(f"Successfully connected to collection: '{collection_name}'")
+def inspect_memory():
+    """Выводит ВСЕ записи в базе данных"""
+    try:
+        collection_name = "assistant_database"
+        collection = client.get_collection(name=collection_name)
+        print(f"Successfully connected to collection: '{collection_name}'")
 
-except Exception as e:
-    print(f"Error connecting to collection: {e}")
-    print("Available collections:", [col.name for col in client.list_collections()])
-    exit()
+    except Exception as e:
+        print(f"Error connecting to collection: {e}")
+        print("Available collections:", [col.name for col in client.list_collections()])
+        exit()
 
-try:
-    all_records = collection.get(
-        include=["metadatas", "documents"]
-    )
+    try:
+        all_records = collection.get(
+            include=["metadatas", "documents"]
+        )
 
-    num_records = len(all_records['ids'])
-    print(f"\n--- Found {num_records} records in V.E.G.A. memory ---\n")
+        num_records = len(all_records['ids'])
+        print(f"\n--- Found {num_records} records in V.E.G.A. memory ---\n")
 
-    for i in range(num_records):
-        record_id = all_records['ids'][i]
-        document = all_records['documents'][i]
-        metadata = all_records['metadatas'][i]
+        for i in range(num_records):
+            record_id = all_records['ids'][i]
+            document = all_records['documents'][i]
+            metadata = all_records['metadatas'][i]
 
-        print(f"--- Record ID: {record_id} ---")
-        print(f"Document (Text): {document}")
-        print(f"Metadata: {metadata}")
-        print("-" * 20 + "\n")
+            print(f"--- Record ID: {record_id} ---")
+            print(f"Document (Text): {document}")
+            print(f"Metadata: {metadata}")
+            print("-" * 20 + "\n")
 
-except Exception as e:
-    print(f"An error occurred while fetching records: {e}")
+    except Exception as e:
+        print(f"An error occurred while fetching records: {e}")
+
+
+if __name__ == "__main__":
+    inspect_memory()
 
 
 ========================================
@@ -2370,6 +2799,7 @@ except Exception as e:
 import threading
 import time
 from assistant_brain.brain import initialize_brain, generate_general_greeting
+from assistant_brain.hotkeys_manager import initialize_hotkeys_manager
 from assistant_output.voice_output_eng import SpeechModuleENG
 from assistant_output.voice_output_rus import SpeechModuleRUS
 from assistant_tools.utils import play_sfx
@@ -2380,6 +2810,7 @@ play_sfx('hard_processing')
 
 initialize_brain() # вызывает subscribe("USER_SPEECH", generate_response), чтобы не импортировать сразу весь brain
 initialize_database()
+initialize_hotkeys_manager()
 
 while True: 
     print("\nPlease, choose language for V.E.G.A.")
@@ -2430,35 +2861,81 @@ while True:
     else:
         print("Incorrect mode. Please try again.")
 
-# НАДО СДЕЛАТЬ: фоновые задачи (а также tasks_completed_today.json), интерфейс
+# ЛОГГИРОВАТЬ В КРАТКОВРЕМЕННУЮ ПАМЯТЬ - ЧТО ТАМ ХРАНИТСЯ, КОГДА ВЕГА ЧТО-ТО ЗАПИСЫВАЕТ ИЛИ УДАЛЯЕТ
+# ЛОГГИРОВАТЬ В КРАТКОВРЕМЕННУЮ ПАМЯТЬ - при каких условиях Вегой было сказаны фразы (например, помечать в скобках "фраза была сказана функцией спонтанных мыслей")
 
-# Централизованная Обработка Ошибок: Сейчас try/except в каждой функции. Можно подумать над созданием декоратора, который будет оборачивать все "навыки", логировать ошибки и возвращать стандартизированный ответ в случае сбоя 
+# Передавать Веге названия всех плейлистов Foobar2000 и их содержание
 
-# Для background_tasks.py идеально подойдет библиотека вроде APScheduler        
+# Скачать Rammstein в Foobar2000.
+# Уменьшать громкость остальных звуков при речи Веги, чтобы не перебивала её
+
+# def all_sensors_and_information(): не забыть
+
+# Реализовать запрос "Вега, сделай средний по размеру пост в наш канал о новых технологиях, а то что-то давно в канал ничего не публиковали. Порыскай на сайтах с актуальными новостями о новых технологиях, которые мы не затрагивали в нашем канале. Потом скопируй в буфер обмена содержание поста."
+# Для этого нужно:
+# 1) Навык парсинга новостных сайтов (например, TechCrunch, The Verge, Wired, Ars Technica, Hacker News, Slashdot, Gizmodo, Engadget, CNET, ZDNet)
+# 2) Навык создания постов для телеграм-канала (с возможностью копирования в буфер обмена), хотя можно и просто просить копировать в буфер обмена
+
+# Дать возможность Веге исказть любую информацию/новости, не только с Hubr
+# Например, при запросе "Вега, какие там новые нейросети вышли?" - она искала эту информацию
+
+# Также сделать так, чтобы из памяти выводились все факты по поводу моего канала (для анализа текущего состояния и планирования новых публикаций)
+# Также пригодится, чтобы Веге передавалась текущая переписка с помощью навыка (описать в промпте, когда нужно применять его)
+
+# Создать лист текущих задач: при простом диалоге Вега не должна оправлять флажок, а вот для важных задач и тех, которые не решаются здесь и сейчас (по типу "Вега, мониторь этот сайт на предмет новой информации")
+# Вега применяет навык и оправляет флажок в этот файл, который будет просматриваться каждые 2 минуты
+# Для этого нужно:
+# 1) Навык создания/удаления/просмотра текущих задач (флажков)
+# 2) Фоновая функция, которая каждые 2 минуты проверяет наличие новых флажков и выполняет их (вызывает навык мониторинга сайта, навык поиска информации и т.д.)
+
+
+# дать Веге инструмент вспомнить информацию из памяти САМОЙ
+# Например, Вега может сказать: "Сэр, вы упоминали, что хотите написать статью о новых технологиях. Могу я помочь вам с этим?"
+
+
+# Случайные проактивные взаимодействия:
+# Раз в случайное количество времени дается запрос к Веге с перечей ВСЕХ текущих датчиков: погода, время и дата, новости, логи внутренних диалогов, текущие процессы на пк, контекст экрана, ... , ... , всю картину мира
+# В итоге Вега будет говорить что-нибудь интересное. ПРомпт можно начать со слов 
+# "Ты заскучала. Ты - операционная система Сэра, и вот датчики: ... , вот кратковременная память: ... . Ты можешь делать что угодно: например, вызвать функцию вспоминания чего-либо из базы данных, просмотреть телеграм канал Сэра, посмотреть новости, погоду, время и дату, текущие процессы на ПК, контекст экрана и т.д.
+# Ты можешь делать предложения Сэру, рассказывать интересные факты, шутить, предлагать помощь в работе и т.д. Главное - проявлять инициативу и быть полезной."
+
+# Написать отдельную функцию, которая получает прогноз погоды на ЧАС
+#(Minutely Forecast) - для осадков на ближайший час
+# Этот API-ответ дает очень детальный прогноз осадков на ближайший час с шагом в одну минуту. Это самый точный способ узнать, начнется ли дождь или снег в течение следующего часа.
+# Особенности:
+# Данные на 60 минут вперед.
+# Только информация об интенсивности осадков.
+# Недоступно для всех локаций в мире.
+
+# Разобраться с проблемой, когда Вега, допустим, записывает в память, однако отвечает после function calling = None.
+# Пример:
+# 2025-10-18 21:12:17,890 - google_genai.types - [WARNING] - Warning: there are non-text parts in the response: ['function_call'], returning concatenated text result from text parts. Check the full candidates.content.parts accessor to get the full model response.
+# V.E.G.A.: None
+# Тут она вызвала добавить в память новый факт, но в итоге ответила ничего, так как когда находится вызов функции - в дальнейшем коде нет проверки на текстовые части
+# Для этого нужно:
+# 1) Либо в коде, который обрабатывает ответ от модели, нужно проверять, есть ли текстовые части, и если есть - выводить их, даже если есть вызов функции
+
+
+
+
+# ПОМОГИТЕ, СЛИШКОМ МНОГО ЗАДАЧ!
+
 try:
     while True:
         time.sleep(1)
+        # Для фоновых задач
 
-        # def generate_briefing():
-        #     """Генерирует и озвучивает утренний/дневной брифинг."""
+        # Анализ погоды
+        # Что делает: Через API погоды (например, OpenWeatherMap) проверяет прогноз на сегодня и завтра
 
-        # Парсинг новостей/данных (data_harvester.py):
-        #Что делает: Раз в час "ходит" на выбранные сайты (новостные агрегаторы, Reddit, Hacker News, GitHub Trending) и собирает заголовки по ключевым для тебя темам (AI, Python, кибербезопасность, квантовая физика)
+        # Анализ новостей
+        # Что делает: Проверяет новости на наличие важных событий, которые могут повлиять на планы пользователя
 
-        # Анализ погоды (weather_agent.py):
-        # Что делает: Через API погоды (например, OpenWeatherMap) проверяет прогноз на сегодня и завтра.
+        # Анализ календаря
+        # Что делает: Проверяет календарь пользователя на наличие предстоящих событий или встреч
 
-        # Автоматизация рутины (task_automator.py):
-        # Что делает: Выполняет простые скрипты по расписанию или триггеру. Например, в полночь запускает скрипт для очистки временных файлов или создания бэкапа важных папок.
-
-        # Генератор случайных взаимодействий (serendipity_engine.py):
-        # Что делает: Это реализация TODO. В случайные моменты времени (не чаще раза в час, чтобы не раздражать) Вега выдает что-то не связанное с работой:
-        # Интересный факт: "Знаете ли вы, что в момент Большого взрыва Вселенная была горячее, чем ядро Солнца, и имела плотность, превышающую плотность атомного ядра?"
-        # "Анализ вашего плейлиста показывает 87% совпадение с 'грустными песнями для одиноких вечеров'. Система работает в штатном режиме."
-        # "Если бы вы могли добавить мне одну новую способность прямо сейчас, что бы это было?"
-
-        # Системный мониторинг в реальном времени
-        # Как это работает: Вместо того чтобы Вега просто говорила "Загрузка CPU 75%", она в реальном времени строит и обновляет линейный график, показывающий динамику загрузки CPU за последние 60 секунд.
+        # Анализ системных ресурсов
+        # Что делает: Мониторит использование CPU, памяти и диска, чтобы предупредить пользователя о возможных проблемах
 
 except KeyboardInterrupt:
     print("\nThe program is ending.")
@@ -2466,43 +2943,103 @@ except KeyboardInterrupt:
 
 
 ========================================
-# Содержимое файла: systemic_tools/systemic_skills.py
+# Содержимое файла: tests/test1.py
 ========================================
 
-# systemic_skills.py
+import asyncio
+from pyrogram import Client
 
-import json
+# Получаем эти данные на https://my.telegram.org/auth (API development tools)
+API_ID = 22543405  # <-- ВАШ API_ID
+API_HASH = "b49fd0e149ca3bdfaed576836566605b"
 
-def read_json(filename: str):
-    """Читает JSON-файл. Если файла нет или он поврежден, создает его с содержимым по умолчанию и возвращает его."""
+SESSION_NAME = "vega_telegram_session" # Имя сессии. Можно выбрать любое. Pyrogram создаст файл сессии (например, vega_telegram_session.session)
+VEGA_CHANNEL_USERNAME = "@VEGA_and_other_heresy" # Канал, данные которого мы хотим получить (используем @username или ID)
+
+async def _get_channel_data(client: Client, channel_username: str, limit_posts: int): # Функция должна быть асинхронной (async def)
+    """Получает факты о канале, количество подписчиков и все посты. Сначала выводит самые актуальные посты, двигаясь к старым."""
+    print(f"Запрос данных для канала: \n-> {channel_username}")
+
     try:
-        with open(filename, "r", encoding="utf-8") as file:
-            return json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        # Если файла нет или он пустой/битый
-        print(f"Файл '{filename}' не найден или поврежден.")
-     
-def write_json(filename: str, data: dict):
-    try:
-        with open(filename, "w", encoding="utf-8") as file:
-            json.dump(data, file, indent=4)
+        chat = await client.get_chat(channel_username) # Все сетевые вызовы Pyrogram требуют 'await'
     except Exception as e:
-        return f"Error writing to json file: {e}"
+        print(f"Ошибка при получении информации о чате: {e}")
+        return None
+
+    channel_info = {
+        "channel_name": chat.title,
+        "description": chat.description if chat.description else "No description available.",
+        "subscribers": chat.members_count,
+        "last_posts": []
+    }
+
+    print(f"-> Получено название: {channel_info['channel_name']} | Подписчиков: {channel_info['subscribers']}")
+
+    # history — это асинхронный итератор, мы перебираем его
+    history = client.get_chat_history(channel_username, limit=limit_posts) # Получаем историю сообщений (постов) канала
+    async for message in history: # Проходимся по всем постам, используем 'async for' для асинхронного итератора
+        post_data = {
+            "id": message.id,
+            "date": message.date.strftime("%Y-%m-%d %H:%M:%S"),
+            "text": message.text.strip() if message.text else "[Media / No Text]"
+        }
+        channel_info["last_posts"].append(post_data)
+    
+    return channel_info
+
+async def get_channel_data(channel_username: str = VEGA_CHANNEL_USERNAME, limit_posts: int = 0):
+    """Основная асинхронная функция для запуска Telegram-клиента и получения данных канала."""
+    async with Client(SESSION_NAME, API_ID, API_HASH) as client: # Используем 'async with' для корректного асинхронного запуска
+
+        data = await _get_channel_data(client, channel_username, limit_posts=limit_posts) # Вызываем асинхронную функцию с 'await'
+
+        if data:
+            posts = []
+            for post in data['last_posts']:
+                text = post['text'].replace('\n', ' ')
+                posts.append(f"ID публикации: {post['id']}; Дата публикации: {post['date']}; Текст публикации: {text}.")
+
+            final_posts = "\n\n".join(posts)
+
+            print(f"Название канала: {data['channel_name']}; \n\nПодписчики: {data['subscribers']}; \n\nОписание: {data['description']}; \n\nПосты: \n{final_posts}")
+            return f"Название канала: {data['channel_name']}; \nПодписчики: {data['subscribers']}; \nОписание: {data['description']}; \nПосты: \n{final_posts}"
+
+if __name__ == "__main__":
+    print("Запуск клиента Telegram.")
+    # Запускаем асинхронную функцию
+    asyncio.run(get_channel_data())
+
+
+
 
 
 ========================================
-# Содержимое файла: tests/find_path.py
+# Содержимое файла: tests/test2.py
 ========================================
 
-import sys
+import asyncio
+import datetime
 
-print(sys.executable)
+async def toast():
+    now1 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"Toast made at {now1}")
+    await asyncio.sleep(5)
+    now2 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"Toast finished at {now2}")
+
+async def make_toast():
+    print("Making toast...")
+    await toast()
+
+
+if __name__ == "__main__":
+    asyncio.run(make_toast())
 
 
 
 
 ========================================
-# Содержимое файла: tests/just_another_test.py
+# Содержимое файла: tests/test3.py
 ========================================
 
 # import os
@@ -2554,201 +3091,14 @@ except Exception as e:
 
 
 ========================================
-# Содержимое файла: tests/test!.py
+# Содержимое файла: tests/test4.py
 ========================================
 
-from ctypes import cast, POINTER
-from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+import sys
 
-def get_system_volume() -> int:
-    """Возвращает текущую системную громкость в процентах (от 0 до 100)."""
-    try:
-        # Находим аудио устройство
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(
-            IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        volume_control = cast(interface, POINTER(IAudioEndpointVolume))
-        
-        # Получаем громкость в виде скаляра (от 0.0 до 1.0)
-        current_volume_scalar = volume_control.GetMasterVolumeLevelScalar()
-        
-        # Переводим скаляр в проценты
-        current_volume_percent = int(current_volume_scalar * 100)
-
-        print(f"Current volume: {current_volume_percent}")
-        return f"Current volume: {current_volume_percent}"
-    except Exception as e:
-        return f"Ошибка при получении информации о текущей громкости: {e}"
-
-def set_system_volume(level: int):
-    """Принимает, блядь, число от 0 до 100 и выставляет такую системную громкость."""
-    if not 0 <= level <= 100:
-        print(f"ТЫ ЧТО, БЛЯДЬ, ТУПОЙ? Громкость должна быть от 0 до 100, а не {level}!")
-        return
-
-    try:
-        # Находим аудио устройство
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(
-            IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        volume_control = cast(interface, POINTER(IAudioEndpointVolume))
-        
-        # Переводим проценты в скаляр от 0.0 до 1.0
-        target_volume_scalar = level / 100.0
-        
-        # Выставляем  громкость
-        volume_control.SetMasterVolumeLevelScalar(target_volume_scalar, None)
-        
-        print(f"Volume changed to {level}%.")
-        return f"Volume changed to {level}%."
-    except Exception as e:
-        print(f"Error when changing volume: {e}")
-        return f"Error when changing volume: {e}"
-
-if __name__ == "__main__":
-    import time  # noqa: F401
-    get_system_volume()
-    time.sleep(2)
-    set_system_volume(55)
+print(sys.executable)
 
 
-
-
-========================================
-# Содержимое файла: tests/test_ocr.py
-========================================
-
-import easyocr
-import pytesseract
-from PIL import Image, ImageEnhance
-import pyautogui
-import os
-import time
-import cv2
-from paddleocr import PaddleOCR
-
-pytesseract.pytesseract.tesseract_cmd = r'C:\Users\ivanc\Desktop\Project_V.E.G.A\Tesseract-OCR\tesseract.exe'
-
-def make_screenshot():
-    filename = "screenshot.png"
-    try:
-        # Делаем скриншот
-        screenshot = pyautogui.screenshot()
-        
-        # Конвертируем скриншот pyautogui в PIL Image
-        screenshot_pil = screenshot  # pyautogui.screenshot() возвращает объект, совместимый с PIL
-        
-        # Убедимся, что это объект PIL.Image
-        if not isinstance(screenshot_pil, Image.Image):
-            screenshot_pil = Image.frombytes('RGB', screenshot.size, screenshot.rgb)
-        
-        # Улучшаем резкость (опционально)
-        enhancer = ImageEnhance.Sharpness(screenshot_pil)
-        screenshot_pil = enhancer.enhance(2.0)  # Увеличение резкости (значение от 0 до 2)
-
-        # Масштабирование изображения для увеличения разрешения
-        new_size = (int(screenshot_pil.width * 2), int(screenshot_pil.height * 2))
-        screenshot_pil = screenshot_pil.resize(new_size, Image.Resampling.LANCZOS)
-
-        # Сохраняем с высоким качеством
-        screenshot_pil.save(filename, quality=95, optimize=True)
-        
-        return {"status": "success", "file_path": os.path.abspath(filename)}
-    except Exception as e:
-        print(f"Ошибка создания скриншота: {str(e)}")
-        return {"status": "error", "message": str(e)}
-
-def preprocess_image(image_path):
-    try:
-        image = cv2.imread(image_path)
-        if image is None:
-            raise FileNotFoundError(f"Не удалось загрузить изображение: {image_path}")
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        cv2.imwrite('processed_screenshot.png', gray)
-        return gray
-    except Exception as e:
-        print(f"Ошибка предобработки изображения: {str(e)}")
-        return None
-
-def read_text_tesseract():
-    try:
-        result = make_screenshot()
-        if result["status"] == "error":
-            print(f"Ошибка: {result['message']}")
-            return
-        image_path = result["file_path"]
-        
-        # Предобработка изображения
-        processed_image = preprocess_image(image_path)
-        if processed_image is None:
-            print("Не удалось обработать изображение.")
-            return
-        
-        # Распознавание текста с оптимизированными параметрами
-        text = pytesseract.image_to_string(processed_image, lang='rus+eng', config='--oem 1 --psm 6')
-        print("Извлеченный текст (Pytesseract):")
-        print(text if text.strip() else "Текст не распознан.")
-
-    except Exception as e:
-        print(f"Ошибка при распознавании текста: {str(e)}")
-
-def read_text_easyocr():
-    try:
-        result = make_screenshot()
-        if result["status"] == "error":
-            print(f"Ошибка: {result['message']}")
-            return
-        
-        print("Инициализация EasyOCR...")
-        reader = easyocr.Reader(['ru', 'en'])
-        result = reader.readtext('screenshot.png')
-        print("Извлеченный текст (EasyOCR):")
-        for detection in result:
-            print(detection[1])  # detection[1] — извлеченный текст
-    except Exception as e:
-        print(f"Ошибка при распознавании текста: {str(e)}")
-
-def read_text_paddleocr():
-    try:
-        result = make_screenshot()
-        if result["status"] == "error":
-            print(f"Ошибка: {result['message']}")
-            return
-        
-        print("Инициализация PaddleOCR...")
-        ocr = PaddleOCR(use_angle_cls=True, lang='ru')
-        result = ocr.ocr('screenshot.png', cls=True)
-        print("Извлеченный текст (PaddleOCR):")
-        for line in result[0]:  # PaddleOCR возвращает список результатов
-            print(line[1][0])  # Текст находится во втором элементе кортежа
-    except Exception as e:
-        print(f"Ошибка при распознавании текста: {str(e)}")
-
-def print_play_text(model):
-    print(f"Запуск {model} через 3 секунды...")
-    time.sleep(3)
-    print("Запуск.")
-
-if __name__ == "__main__":
-    while True:
-        print("\n\n'1' - Pytesseract, '2' - EasyOCR, '3' - PaddleOCR, '4' - выйти.")
-        command = input("Введите модель компьютерного зрения для проверки: ")
-
-        if command == "1":
-            print_play_text("Pytesseract")
-            read_text_tesseract()
-        elif command == "2":
-            print_play_text("EasyOCR")
-            read_text_easyocr()
-        elif command == "3":
-            print_play_text("PaddleOCR")
-            read_text_paddleocr()
-        elif command == "4":
-            print("Выход.")
-            break
-        else:
-            print("Неизвестная команда. Попробуйте снова.")
 
 
 ========================================

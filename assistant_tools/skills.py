@@ -1,4 +1,5 @@
 # skills.py
+import threading
 import webbrowser
 import requests
 import datetime
@@ -20,6 +21,8 @@ from assistant_general.logger_config import setup_logger
 from assistant_vector_database.database import add_new_memory
 from bs4 import BeautifulSoup
 import wmi
+from PIL import Image 
+from pyrogram import Client
 
 setup_logger()
 logger = logging.getLogger(__name__)
@@ -77,15 +80,41 @@ def get_date() -> str:
     return f"Today {now.day} {MONTHS[now.month - 1]}."
 
 def make_screenshot():
+    """Делает скриншот и сохраняет его в папку 'assistant_temporary_files'. Папка создается автоматически, если ее нет."""
+    # Определяем имя папки и имя файла
+    temp_folder = "assistant_temporary_files"
     filename = "screenshot.png"
+    
+    full_path = os.path.join(temp_folder, filename) # os.path.join() - правильный способ соединять пути
     try:
-        screenshot = pyautogui.screenshot(filename)  
-        screenshot.save(filename)  
-        return {"status": "success", "file_path": os.path.abspath(filename)}
+        # Проверяем, существует ли папка, и создаем ее, если нет
+        os.makedirs(temp_folder, exist_ok=True) # exist_ok=True означает, что ошибки не будет, если папка уже существует
+        
+        # 4. Делаем скриншот и сохраняем его сразу по полному пути
+        screenshot = pyautogui.screenshot(full_path)
+        screenshot.save(full_path)
+        
+        return {"status": "success", "file_path": os.path.abspath(full_path)} # Возвращаем абсолютный путь
     
     except Exception as e:
-        logger.error({"status": "error", "message": str(e)})
+        logger.error(f"Failed to create screenshot: {e}") 
         return {"status": "error", "message": str(e)}
+    
+def get_screenshot_context():
+    """Делает скриншот и возвращает объект Image, либо None в случае ошибки."""
+    try:
+        screenshot_info = make_screenshot()
+        if screenshot_info['status'] == 'success':
+            screenshot_path = screenshot_info['file_path']
+            img = Image.open(screenshot_path)
+            logger.info(f"Screenshot taken: {screenshot_path}")
+            return img # Возвращаем само изображение
+        else:
+            logger.error(f"Failed to take screenshot: {screenshot_info['message']}")
+            return None 
+    except Exception as e:
+        logger.error(f"Error creating or opening screenshot: {e}")
+        return None 
     
 def save_to_memory(text):
     """Сохраняет в память любой факт о пользователе."""
@@ -200,7 +229,7 @@ def increase_volume(amount: int = 10):
     finally:
         pythoncom.CoUninitialize()
 
-def get_habr_news(limit=5):
+def get_habr_news(limit=10):
     """Получает топ статей с Habr.com."""
     url = 'https://habr.com/ru/all/'  # Главная страница с новыми статьями
     headers = {
@@ -244,7 +273,8 @@ def get_habr_news(limit=5):
         return []
 
 def get_system_metrics():
-    """Возвращает текущую нагрузку процессора, видеокарты и оперативной памяти один раз."""
+    """Возвращает текущую нагрузку процессора, видеокарты и оперативной памяти один раз. 
+    Требует открытого OpenHardwareMonitor."""
     try:
         w = wmi.WMI(namespace="root\OpenHardwareMonitor")
         sensors = w.Sensor()
@@ -346,7 +376,7 @@ def drag_mouse(x_to, y_to, duration=0.5):
     logger.debug(f"Dragged mouse to {x_to}, {y_to}.")
     return f"Dragged mouse to {x_to}, {y_to}."
     
-def press_hotkey(*keys):
+def press_hotkey(keys):
     """Нажимает любое количество горячих клавиш. Например: ('ctrl', 'shift', 'esc')"""
     pyautogui.hotkey(*keys)
     logger.debug(f"Hotkey pressed: {' + '.join(keys)}")
@@ -365,14 +395,14 @@ def write_text(text, attempts=0):
 def system_command(command):
     """Выполняет системные команды. Выключение, перезагрузка. ОПАСНО."""
     # Примеры команд для Windows:
-    # 'shutdown /s /t 1' - выключить пк через 1 секунду, 'shutdown /r /t 1' - перезагрузить пк через 1 секунду, 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0' - отправить в спящий ре'Проверка.'жим
+    # 'shutdown /s /t 1' - выключить пк через 1 секунду, 'shutdown /r /t 1' - перезагрузить пк через 1 секунду, 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0' - отправить в спящий режим
     os.system(command)
     logger.info(f"Executing system command: {command}.")
     return f"Executing system command: {command}."
 
 # --- ОКНА, ПРОГРАММЫ, ПРИЛОЖЕНИЯ ----
 
-def get_filtered_processes():
+def get_processes():
     """Сканирует систему и возвращает только полезный список процессов, отфильтровав все ненужные/системные."""
     # Сюда кладем все системные процессы, которые нам нужны
     system_processes_blacklist = [
@@ -422,54 +452,108 @@ def currently_open_windows():
             titles.append(title)
     return titles
     
-def manage_window(title, action='activate'):
-    """Находит окно по заголовку и дает возможность провести разные команды: activate, minimize, maximize, close."""
-    try:
-        # Ищем окно, заголовок которого СОДЕРЖИТ указанный текст
-        windows = gw.getWindowsWithTitle(title)
-        if windows:
-            win = windows[0]
-            if action == 'activate':
-                win.activate()
-            elif action == 'minimize':
-                win.minimize()
-            elif action == 'maximize':
-                win.maximize()
-            elif action == 'close':
-                win.close()
-            logger.debug(f"Window '{title}' action '{action}' executed.")
-            return f"Window '{title}' action '{action}' executed."
-        else:
-            logger.info(f"Window with title '{title}' not found.")
-            return f"Window with title '{title}' not found."
-    except IndexError:
-        logger.error(f"ERROR: No window with title '{title}' found.")
-        return f"ERROR: No window with title '{title}' found."
-    except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
-        return f"An error occurred: {str(e)}"
-    
-# --- УПРАВЛЕНИЯ ПРОГРАММАМИ И ПРИЛОЖЕНИЯМИ ---
 
-def open_program(path_to_exe):
-    """Открывает программу или файл по указанному пути."""
-    try:
-        os.startfile(path_to_exe)
-        return f"Starting the program at {path_to_exe}."
-    except Exception as e:
-        return f"Failed to start the program: {str(e)}"
-    
-def kill_process_by_name(process_name):
-    """Находит и безжалостно убивает процесс по его имени."""
-    # /f - force, /im - image name
-    os.system(f"taskkill /f /im {process_name}") 
-    logger.info(f"Sent a kill command to {process_name}.")
-    return f"Sent a kill command to {process_name}."
 
+
+
+# =========================================================================
+# 1. КОНФИГУРАЦИЯ (ОБЯЗАТЕЛЬНО ИЗМЕНИТЕ ЭТИ ЗНАЧЕНИЯ)
+# =========================================================================
+
+# Получите эти данные на https://my.telegram.org/auth (API development tools)
+API_ID = 1234567  # <-- ВАШ API_ID
+API_HASH = "YOUR_API_HASH_HERE"  # <-- ВАШ API_HASH
+
+# Имя сессии. Можно выбрать любое. Pyrogram создаст файл сессии (например, my_session.session)
+SESSION_NAME = "my_telegram_session"
+
+# Канал, данные которого мы хотим получить (используйте @username или ID)
+CHANNEL_USERNAME = "@telegram" # <-- ИЗМЕНИТЕ НА НУЖНЫЙ КАНАЛ
+
+# =========================================================================
+# 2. ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ДАННЫХ
+# =========================================================================
+
+def get_channel_data(client: Client, channel_username: str):
+    """Получает факты о канале, количество подписчиков и 5 последних постов."""
+    logging.info(f"-> Запрос данных для канала: {channel_username}")
+
+    # Получение основной информации о чате (Channel Facts + Subscribers)
+    try:
+        chat = client.get_chat(channel_username)
+    except Exception as e:
+        print(f"Ошибка при получении информации о чате: {e}")
+        return None
+
+    # Сбор фактов и подписчиков
+    channel_info = {
+        "название": chat.title,
+        "описание": chat.description if chat.description else "Нет описания",
+        "подписчики": chat.members_count,
+        "последние_посты": []
+    }
+
+    logging.info(f"-> Получено название: {channel_info['название']} | Подписчиков: {channel_info['подписчики']}")
+
+    # Получение последних 5 постов
+    history = client.get_chat_history(channel_username, limit=5)
+    
+    # history — это асинхронный итератор, мы перебираем его
+    for message in history:
+        post_data = {
+            "id": message.id,
+            "дата": message.date.strftime("%Y-%m-%d %H:%M:%S"),
+            "текст": message.text.strip() if message.text else "[Медиа или другой контент]" # Берем текст. Если текста нет (это медиа), ставим заглушку
+        }
+        channel_info["последние_посты"].append(post_data)
+
+    logging.info("-> 5 последних постов успешно получены.")
+    
+    return channel_info
+
+    
+def main():
+    """Основная асинхронная функция для инициализации клиента."""
+    with Client(SESSION_NAME, API_ID, API_HASH) as client: # 'async with' гарантирует корректный запуск и остановку клиента.
+        
+        # Вызываем нашу основную функцию
+        data = threading.Thread(target=get_channel_data, args=(client, CHANNEL_USERNAME))
+        data.start()
+        data.join()
+
+        if data:
+            print("\n" + "="*50)
+            print("РЕЗУЛЬТАТ:")
+            print(f"Название: {data['название']}")
+            print(f"Подписчики: {data['подписчики']}")
+            print(f"Описание: {data['описание']}")
+            print("-" * 50)
+            print("ПОСЛЕДНИЕ 5 ПОСТОВ:")
+            for i, post in enumerate(data['последние_посты']):
+                print(f"  {i+1}. ID: {post['id']} | Дата: {post['дата']}")
+                # Выводим первые 80 символов текста
+                print(f"     Текст: {post['текст'][:80]}...")
+            print("="*50)
+
+def all_sensors_and_information():
+    """Возвращает все текущие данные: погода, новости, время и дата, логи внутренних диалогов, контекст экрана."""
+    # Научить парсить Вегу мой тг канал (например, сначала хотя бы подписчики и первые 3-5 постов: может быть, перевести телеграм в браузер и дать Веге доступ просматривать его)
+    # Также сделать так, чтобы из памяти выводились все факты по поводу этого канала (для )
+    return {"current_time": get_time(), 
+            "current_date": get_date(), 
+            "news_from_habr": get_habr_news(), 
+            "current_processes_in_pc": get_processes(), 
+            "currently_open_windows": currently_open_windows(),
+            "current_volume": get_system_volume(), 
+            "now_on_screen": get_screenshot_context()
+        } # get_screenshot_context() # Возвращает объект Image из Pillow
 
 
 if __name__ == "__main__":
-    import time  # noqa: F401
-    get_system_volume()
-    time.sleep(2)
-    get_system_metrics()
+    # Запуск асинхронного цикла.
+    print("Запуск клиента Telegram...")
+    
+    # ПЕРВЫЙ ЗАПУСК: 
+    # Клиент попросит вас ввести номер телефона, код и (возможно) 2FA-пароль. 
+    # После этого будет создан файл сессии, и последующие запуски будут мгновенными.
+    main()

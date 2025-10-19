@@ -1,11 +1,11 @@
 # added_skills.py
 
 # 1. ИМПОРТ СХЕМЫ НОВОГО ИНСТРУМЕНТА
-from assistant_tools.skills_diagrams import (
+from assistant_tools.skills_diagrams import ( # Базовые навыки
     get_weather_scheme, search_in_google_scheme, get_date_scheme, get_time_scheme, make_screenshot_scheme, save_to_memory_scheme, lock_pc_scheme,
     get_windows_layout_scheme, move_mouse_scheme, current_mouse_coordinates_scheme, click_mouse_scheme, scroll_mouse_scheme, drag_mouse_scheme,
-    press_hotkey_scheme, copy_to_clipboard_scheme, write_text_scheme, system_command_scheme, get_filtered_processes_scheme, currently_open_windows_scheme,
-    manage_window_scheme, open_program_scheme, kill_process_by_name_scheme, get_system_volume_scheme, set_system_volume_scheme, decrease_volume_scheme,
+    press_hotkey_scheme, copy_to_clipboard_scheme, write_text_scheme, system_command_scheme, get_processes_scheme, currently_open_windows_scheme,
+    get_system_volume_scheme, set_system_volume_scheme, decrease_volume_scheme,
     increase_volume_scheme, get_habr_news_scheme, get_system_metrics_scheme,
 )
 from assistant_tools.music_skills_diagrams import ( # Отдельные музыкальные навыки
@@ -14,8 +14,13 @@ from assistant_tools.music_skills_diagrams import ( # Отдельные муз�
     music_play_random_album_scheme, 
 )
 
+from assistant_social_media_tools.social_media_skills_diagrams import ( # Навыки для соцсетей
+    get_telegram_channel_info_scheme,
+)
+
 import assistant_tools.skills
 import assistant_tools.music_skills
+import assistant_social_media_tools.telegram_skills
 
 # 2. РЕГИСТРАЦИЯ JSON-СХЕМЫ НОВОГО ИНСТРУМЕНТА ДЛЯ FUNCTION CALLING НЕЙРОСЕТИ (Чтобы нейросеть читала описание навыков и могла понимать, что и с какими параметрами вызывать навыки)
 function_declarations = [
@@ -49,11 +54,11 @@ function_declarations = [
     system_command_scheme, 
 
     # НАВЫКИ, СВЯЗАННЫЕ С ВЗАИМОДЕЙСТВИЕМ С ПРИЛОЖЕНИЯМИ И ОКНАМИ
-    get_filtered_processes_scheme, 
+    get_processes_scheme, 
     currently_open_windows_scheme,
-    manage_window_scheme, 
-    open_program_scheme, 
-    kill_process_by_name_scheme, 
+
+    # НАВЫКИ ДЛЯ СОЦСЕТЕЙ
+    get_telegram_channel_info_scheme,
 
     # НАВЫКИ, СВЯЗАННЫЕ С МУЗЫКОЙ ИЗ FOOBAR2000
     music_play_random_scheme, 
@@ -100,11 +105,11 @@ skills_registry = {
     "system_command": assistant_tools.skills.system_command,
 
     # НАВЫКИ, СВЯЗАННЫЕ С ВЗАИМОДЕЙСТВИЕМ С ПРИЛОЖЕНИЯМИ И ОКНАМИ
-    "get_filtered_processes": assistant_tools.skills.get_filtered_processes,
+    "get_processes": assistant_tools.skills.get_processes,
     "currently_open_windows": assistant_tools.skills.currently_open_windows,
-    "manage_window": assistant_tools.skills.manage_window,
-    "open_program": assistant_tools.skills.open_program,
-    "kill_process_by_name": assistant_tools.skills.kill_process_by_name,
+
+    # НАВЫКИ ДЛЯ СОЦСЕТЕЙ
+    "get_telegram_channel_info": assistant_social_media_tools.telegram_skills.get_telegram_channel_info,
 
     # НАВЫКИ, СВЯЗАННЫЕ С МУЗЫКОЙ ИЗ FOOBAR2000
     "music_play_random": assistant_tools.music_skills.music_play_random,
