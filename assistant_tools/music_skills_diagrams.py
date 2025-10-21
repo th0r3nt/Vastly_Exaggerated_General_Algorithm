@@ -1,5 +1,3 @@
-# music_skills.py
-# Схемы для простых музыкальных команд (без параметров)
 music_play_random_scheme = {
     "name": "music_play_random",
     "description": "Plays a random track from the user's entire music library. Use for general queries like 'play something', 'any music'.",
@@ -63,7 +61,7 @@ music_play_playlist_scheme = {
         "properties": {
             "playlist_name": {
                 "type": "string",
-                "description": "The name of the playlist, artist, or album. For example: 'Slayer', 'Daft Punk', 'My Workout Playlist'",
+                "description": "The name of the playlist, artist, or album. For example: 'Slayer', 'Daft Punk', 'Lovely tracks'",
             },
         },
         "required": ["playlist_name"],
@@ -101,3 +99,29 @@ music_play_random_album_scheme = {
         "properties": {}
     },
 }
+
+all_names_playlists_scheme = {
+    "name": "all_names_playlists",
+    "description": "Returns the names of all playlists.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    },
+}
+
+all_tracks_in_playlist_scheme = {
+    "name": "all_tracks_in_playlist",
+    "description": "Returns the names of all tracks in playlist.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "playlist_name": {
+                "type": "string",
+                "description": "The name of the playlist from which you want to find out the names of all the tracks."
+            },
+        },
+        "required": ["playlist_name"],
+    },
+}
+
+

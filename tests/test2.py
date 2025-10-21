@@ -1,18 +1,14 @@
-import asyncio
-import datetime
+import os
+from dotenv import load_dotenv
 
-async def toast():
-    now1 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"Toast made at {now1}")
-    await asyncio.sleep(5)
-    now2 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"Toast finished at {now2}")
+load_dotenv()
 
-async def make_toast():
-    print("Making toast...")
-    await toast()
+MUSIC_LIBRARY_PATH = os.getenv("MUSIC_LIBRARY_PATH")
 
+def all_names_playlists():
+    """Возвращает названия всех существующих плейлистов"""
+    all_names_playlists = [playlist.name for playlist in os.scandir(MUSIC_LIBRARY_PATH)]
+    all_names = "; ".join(all_names_playlists)
+    return all_names
 
-if __name__ == "__main__":
-    asyncio.run(make_toast())
-
+print(all_names_playlists())

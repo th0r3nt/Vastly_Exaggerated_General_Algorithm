@@ -11,16 +11,16 @@ from assistant_tools.skills_diagrams import ( # Базовые навыки
 from assistant_tools.music_skills_diagrams import ( # Отдельные музыкальные навыки
     music_play_random_scheme, music_pause_playback_scheme, music_resume_playback_scheme, music_play_next_track_scheme,
     music_play_previous_track_scheme, music_clear_playlist_scheme, music_play_playlist_scheme, music_play_track_scheme,
-    music_play_random_album_scheme, 
+    music_play_random_album_scheme, all_names_playlists_scheme, all_tracks_in_playlist_scheme
 )
 
-from assistant_social_media_tools.social_media_skills_diagrams import ( # Навыки для соцсетей
+from assistant_tools.socialmedia_skills_diagrams import ( # Навыки для соцсетей
     get_telegram_channel_info_scheme,
 )
 
 import assistant_tools.skills
 import assistant_tools.music_skills
-import assistant_social_media_tools.telegram_skills
+import assistant_tools.socialmedia_skills
 
 # 2. РЕГИСТРАЦИЯ JSON-СХЕМЫ НОВОГО ИНСТРУМЕНТА ДЛЯ FUNCTION CALLING НЕЙРОСЕТИ (Чтобы нейросеть читала описание навыков и могла понимать, что и с какими параметрами вызывать навыки)
 function_declarations = [
@@ -70,6 +70,8 @@ function_declarations = [
     music_play_playlist_scheme, 
     music_play_track_scheme,
     music_play_random_album_scheme,
+    all_names_playlists_scheme,
+    all_tracks_in_playlist_scheme
     
 ]
 
@@ -109,7 +111,7 @@ skills_registry = {
     "currently_open_windows": assistant_tools.skills.currently_open_windows,
 
     # НАВЫКИ ДЛЯ СОЦСЕТЕЙ
-    "get_telegram_channel_info": assistant_social_media_tools.telegram_skills.get_telegram_channel_info,
+    "get_telegram_channel_info": assistant_tools.socialmedia_skills.get_telegram_channel_info,
 
     # НАВЫКИ, СВЯЗАННЫЕ С МУЗЫКОЙ ИЗ FOOBAR2000
     "music_play_random": assistant_tools.music_skills.music_play_random,
@@ -121,4 +123,6 @@ skills_registry = {
     "music_play_playlist": assistant_tools.music_skills.music_play_playlist,
     "music_play_track": assistant_tools.music_skills.music_play_track,
     "music_play_random_album": assistant_tools.music_skills.music_play_random_album,
+    "all_names_playlists": assistant_tools.music_skills.all_names_playlists,
+    "all_tracks_in_playlist": assistant_tools.music_skills.all_tracks_in_playlist,
 }

@@ -10,7 +10,7 @@ get_telegram_channel_info_scheme = {
             },
             "limit_posts": {
                 "type": "integer",
-                "description": "The number of recent posts to retrieve. Default: 300 (Great if you need to fully analyze someone's channel). Specify '0' if posts are not needed, '5' if the latest 5 posts are needed, and so on.",
+                "description": "The number of recent posts to retrieve. Default: 500 (Great if you need to fully analyze someone's channel). Specify '0' if posts are not needed, '5' if the latest 5 posts are needed, and so on.",
             },
         },
         "required": ["channel_username"],

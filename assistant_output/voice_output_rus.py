@@ -5,7 +5,7 @@ import queue
 import sounddevice as sd
 import soundfile as sf
 from edge_tts import Communicate
-from assistant_event_bus.event_bus import subscribe
+# from assistant_event_bus.event_bus import subscribe
 import os 
 
 class SpeechModuleRUS:
@@ -16,7 +16,7 @@ class SpeechModuleRUS:
         self.temp_folder = "assistant_temporary_files"
         os.makedirs(self.temp_folder, exist_ok=True)
         
-        subscribe("GEMINI_RESPONSE", self.queue_text_for_synthesis)
+        # subscribe("GEMINI_RESPONSE", self.queue_text_for_synthesis)
         print("The speech module has been initialized.")
 
     def synth(self, text: str, voice: str = "ru-RU-SvetlanaNeural"):
@@ -63,3 +63,9 @@ class SpeechModuleRUS:
         text = kwargs.get('text')
         if text and isinstance(text, str):
             self.tts_queue.put(text)
+
+if __name__ == "__main__":
+    test = SpeechModuleRUS()
+    test.start()
+
+    test.synth(text="Проверка")

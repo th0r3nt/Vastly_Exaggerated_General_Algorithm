@@ -6,6 +6,8 @@ import json
 import sounddevice
 import queue
 
+from assistant_tools.utils import play_sfx
+
 print("\n")
 
 class SpeechListener(threading.Thread):
@@ -22,6 +24,7 @@ class SpeechListener(threading.Thread):
             print("\nThe local speech recognition engine (Vosk) has been initialized successfully.")
         except Exception as e:
             print(f"CRITICAL ERROR: Failed to initialize Vosk: {e}")
+            play_sfx("error")
             self.recognizer = None
 
     def _audio_callback(self, indata, frames, time, status):
@@ -31,6 +34,7 @@ class SpeechListener(threading.Thread):
     def run(self):
         """Основной цикл потока-слушателя"""
         if not self.recognizer: # Если Vosk не инициализировался, поток просто завершает работу
+            play_sfx("silent_error")
             return
         
         else:
@@ -46,6 +50,7 @@ class SpeechListener(threading.Thread):
 
                         # Если текст не пустой, кладем его в очередь команд
                         if query:
+                            play_sfx('silent_execution')
                             print(f"[Vosk] Recognized: {query}")
                             publish("USER_SPEECH", query=query)
                             logging.info(f"[Vosk] Recognized: {query}")

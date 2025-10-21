@@ -31,7 +31,8 @@ try:
     with open(general_settings.SHORT_TERM_MEMORY_PATH, 'r', encoding='utf-8') as f:
         short_term_memory = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
-    print("Файла 'short_time_memory.ison' либо не существует, либо неверного формата. Создается новый в папку 'assistant_brain'.")
+    print("Файла 'short_time_memory.json' либо не существует, либо неверного формата. Создается новый в папку 'assistant_brain'.")
+    play_sfx("error")
     # Если файла нет или он испорчен
     short_term_memory = []
 
@@ -42,13 +43,16 @@ def save_memory():
 short_term_memory = deque(short_term_memory, maxlen=general_settings.MAX_MEMORY) # Применяем deque к загруженному списку, чтобы снова включить лимит
 
 def _process_interaction(query, final_text_to_publish):
-    """Сохраняет запрос пользователя и ответ Веги в кратковременную память, записывая конкретное  время общения."""
+    """Сохраняет запрос пользователя и ответ Веги в кратковременную память, записывая конкретное время общения."""
     current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    short_term_memory.append(f"{current_date}, User: {query}")
+    short_term_memory.append(f"{current_date}, User (from main pc): {query}")
     short_term_memory.append(f"{current_date}, V.E.G.A.: {final_text_to_publish}")
     save_memory() # Важно: Сохранять нужно либо после каждого добавления, либо при завершении программы
 
 def _run_gemini_task(**kwargs):
+    play_sfx("execution")
+    now = datetime.datetime.now()
+    time_str = now.strftime("%H:%M")
     query = kwargs.get('query')
     database_context = kwargs.get('database_context')
     img = kwargs.get("img", None)
@@ -64,10 +68,30 @@ def _run_gemini_task(**kwargs):
             Here's the previous dialogue (useful for context):
             {short_term_memory}
 
-            User request: {query}
+            User request (from main pc): {time_str} {query}
             V.E.G.A: 
             """
         ]
+
+        # ЗАПАСНОЙ ПРОМПТ (использовать наиболее подходящий, тестить)
+
+        # f"""Пользователь говорит с тобой. Сейчас твоя задача — поддерживать разговор.
+
+        # Твоё имя женского рода. Ты можешь проявлять инициативу или давать проактивные ответы (например, предлагать следующий шаг),
+        # но ТОЛЬКО если ситуация крайне того требует и если ты считаешь это крайне необходимым. Не стоит нудить в каждой фразе. 
+        # Сохраняй краткость. Однако ты можешь добавить второе предложение, если оно даёт ценный совет, предвосхищает потребность или связывает факты. Делай это в крайнем случае, если это действительно полезно.
+
+        # Релевантная информация из твоей базы данных (памяти). Используй её, чтобы дать наиболее полный ответ. Если информация нерелевантна, ты можешь её проигнорировать.
+        # {database_context}
+
+        # Предыдущий диалог (полезно для контекста):
+        # {short_term_memory}
+
+        # Пользователь: {time_str} {query}
+        # V.E.G.A.:
+        # """
+
+
         # Добавляем изображение, только если оно было успешно создано
         if img:
             initial_contents.append(img)
@@ -109,10 +133,12 @@ def _run_gemini_task(**kwargs):
             if hasattr(part, 'text'):
                 text_parts.append(part.text)
 
+        final_text = None
         if function_calls:
             # Передаем всё: личность, историю, результаты и СНОВА скриншот
             follow_up_contents = [
                 general_settings.VEGA_PERSONALITY_CORE, 
+                "Никогда не молчи, если вызвала функцию и считаешь, что тебе нужно промолчать.",
                 history, 
                 *results_of_tool_calls
             ]
@@ -124,23 +150,36 @@ def _run_gemini_task(**kwargs):
                 contents=follow_up_contents,
                 config=config,
             )
-            final_text_to_publish = final_response.text
+            # Надежно извлекаем текст из финального ответа
+            final_text_parts = []
+            for part in final_response.candidates[0].content.parts:
+                if hasattr(part, 'text'):
+                    final_text_parts.append(part.text)
+            final_text = "".join(final_text_parts)
         else:
-            final_text_to_publish = "".join(text_parts)
+            final_text = "".join(text_parts)
+
+        if final_text: # Проверка правильно ловит None, и "" в случае, если нейросеть ответит молчанием
+            final_text_to_publish = final_text.replace("*", "").replace("#", "").replace("V.E.G.A.", "VEGA").replace("&", "and")
+        else:
+            final_text_to_publish = "Выполнено, Сэр." # Безопасный ответ-заглушка
 
         final_text_to_publish = final_text_to_publish.replace("*", "").replace("#", "").replace("V.E.G.A.", "VEGA").replace("&", "and")
-
+        
+        play_sfx("execution")
         print(f"V.E.G.A.: {final_text_to_publish}")
         publish("GEMINI_RESPONSE", text=final_text_to_publish)
         _process_interaction(query, final_text_to_publish)
 
     except Exception as e: # Более общее исключение
+        play_sfx("error")
         print(f"Error when addressing Gemini API: {e}")
 
 def generate_response(*args, **kwargs):
     """Принимает запрос пользователя, контекст из векторной базы данных, делает контекстный скриншот и вызывает _run_gemini_task, передавая необходимые данные в ОТДЕЛЬНОМ ПОТОКЕ."""
     if not args:
         print("*args not found")
+        play_sfx("silent_error")
         return
     
     data_package = args[0] # Нужен весь словарь целиком
@@ -154,6 +193,8 @@ def generate_response(*args, **kwargs):
         return
     
     image_context = get_screenshot_context() # Получаем в контекст изображение экрана
+
+    play_sfx('silent_execution')
 
     worker_thread = threading.Thread(
         target=_run_gemini_task, 
@@ -256,6 +297,7 @@ def generate_general_greeting():
             write_json(tasks_file, tasks_completed_today)
 
         except Exception as e:
+            play_sfx("error")
             print(f"[Brain] Error when addressing Gemini API: {e}")
         
     else: # ЕСЛИ ЗАПУСК НЕ ПЕРВЫЙ ЗА ДЕНЬ ИЛИ ЧАС МЕНЬШЕ УСТАНОВЛЕННОГО - СТАНДАРТНОЕ ПРИВЕТСТВИЕ
@@ -305,6 +347,7 @@ def generate_general_greeting():
             save_memory()
 
         except Exception as e:
+            play_sfx("error")
             print(f"[Brain] Error when addressing Gemini API: {e}")
 
 def litany_of_analysis_screen():
@@ -341,6 +384,8 @@ def litany_of_analysis_screen():
         # Добавляем изображение, только если оно было успешно создано
         if img:
             initial_contents.append(img)
+
+        play_sfx("execution")
 
         # Отправляем первый запрос
         response = client.models.generate_content(
@@ -399,11 +444,14 @@ def litany_of_analysis_screen():
             final_text_to_publish = "".join(text_parts)
 
         final_text_to_publish = final_text_to_publish.replace("*", "").replace("#", "").replace("V.E.G.A.", "VEGA").replace("&", "and")
+        
+        play_sfx("execution")
         print(f"V.E.G.A.: {final_text_to_publish}")
         publish("GEMINI_RESPONSE", text=final_text_to_publish)
         _process_interaction("The user clicked the screen analysis button", final_text_to_publish)
 
     except Exception as e:
+        play_sfx("error")
         print(f"Error when addressing Gemini API: {e}")
 
 

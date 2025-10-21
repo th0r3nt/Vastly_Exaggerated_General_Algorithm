@@ -7,6 +7,8 @@ import logging
 from assistant_general.logger_config import setup_logger
 from dotenv import load_dotenv
 
+from assistant_tools.utils import play_sfx
+
 load_dotenv()
 setup_logger()
 logger = logging.getLogger(__name__)
@@ -33,12 +35,15 @@ def _send_foobar_command(command_args):
     try:
         full_command = [FOOBAR_PATH] + command_args
         subprocess.Popen(full_command)
+        play_sfx('silent_execution')
         return True
     except FileNotFoundError:
         logger.error("File not found.")
+        play_sfx('error')
         return False
     except Exception as e:
-        print(f"ERROR while executing Foobar2000 command: {e}")
+        logger.error(f"Error while executing Foobar2000 command: {e}")
+        play_sfx('error')
         return False
 
 def _current_tracks():
@@ -47,11 +52,10 @@ def _current_tracks():
 
     for root, dirs, files in os.walk(MUSIC_LIBRARY_PATH): # Рекурсивно обходим всю музыкальную библиотеку
         for filename in files: # Проходимся по файлам
-
             full_path = os.path.join(root, filename)
-            
             # Добавляем найденный полный путь в наш список
             all_tracks_list.append(full_path)
+    play_sfx('silent_execution')
     return all_tracks_list
 
 ALL_TRACKS_CACHE = _current_tracks() # Получает все файлы из музыкальной библиотеки и пути к ним
@@ -67,6 +71,7 @@ def _find_best_track_path(query: str, all_tracks_paths: list, score_cutoff=80):
 def music_play_track(track_name: str = None, artist_name: str = None):
     """Ищет наиболее похожий трек и воспроизводит его."""
     if not track_name and not artist_name:
+        play_sfx('silent_error')
         return "Must be specify the track title or artist name."
 
     # Собираем единый поисковый запрос
@@ -78,13 +83,16 @@ def music_play_track(track_name: str = None, artist_name: str = None):
         _send_foobar_command(['/add', found_path])
         _send_foobar_command(['/play', found_path])
         clean_name = os.path.splitext(os.path.basename(found_path))[0]
+        play_sfx('silent_execution')
         return f"Play: {clean_name}"
     else:
+        play_sfx('silent_error')
         return f"Track similar to '{search_query}' not found in the library."
     
 def music_play_playlist(playlist_name: str):
     """Ищет папку по имени, очищает старый плейлист, добавляет все треки из папки и начинает играть."""
     if not playlist_name:
+        play_sfx('silent_error')
         return "Must specify a playlist name."
 
     playlist_path = None
@@ -94,37 +102,49 @@ def music_play_playlist(playlist_name: str):
                 if entry.is_dir() and playlist_name.lower() in entry.name.lower():
                     playlist_path = entry.path
                     print(f"Playlist found: {playlist_path}")
+                    play_sfx('silent_execution')
                     break
     except FileNotFoundError:
         logger.error("Error: Music library folder not found.")
+        play_sfx('silent_error')
         return "Error: Music library folder not found."
 
     if playlist_path:
         try:
             track_count = sum(1 for f in os.listdir(playlist_path) if f.lower().endswith(('.mp3', '.flac', '.wav', '.ogg', '.m4a')))
             if track_count == 0:
+                logger.info(f"Playlist '{playlist_name}' is empty.")
+                play_sfx('silent_error')
                 return f"Плейлист '{playlist_name}' найден, но он пуст."
         except Exception as e:
             logger.error(f"Не удалось прочитать содержимое плейлиста '{playlist_name}': {e}")
+            play_sfx('silent_error')
             return f"Не удалось прочитать содержимое плейлиста '{playlist_name}': {e}"
 
         success = _send_foobar_command(['/add', playlist_path])
         success = _send_foobar_command(['/play', playlist_path])
         
         if success:
-            return f"Включаю плейлист '{playlist_name}'. Найдено треков: {track_count}."
+            logger.debug(f"Playlist '{playlist_name}' started with {track_count} tracks.")
+            play_sfx('silent_execution')
+            return f"Playlist '{playlist_name}' started with {track_count} tracks."
         else:
-            return "Не удалось запустить воспроизведение плейлиста."
+            logger.error("Failed to start playing playlist.")
+            play_sfx('silent_error')
+            return "Failed to start playing playlist."
     else:
-        return f"Плейлист '{playlist_name}' не найден."
+        play_sfx('silent_error')
+        return f"Playlist '{playlist_name}' not found."
     
 def music_play_random():
     """Выбирает случайный трек из всей музыкальной библиотеки и включает его."""
     if not ALL_TRACKS_CACHE:
+        play_sfx('silent_error')
         return "Music library is empty. There's nothing to play."
         
     # Выбираем случайный полный путь к файлу из кеша
     random_track_path = random.choice(ALL_TRACKS_CACHE)
+    logger.debug(f"Random track selected: {random_track_path}")
     
     clean_name = os.path.splitext(os.path.basename(random_track_path))[0]
 
@@ -132,8 +152,12 @@ def music_play_random():
     success = _send_foobar_command(['/play', random_track_path])
     
     if success:
+        logger.debug(f"Random track played: {clean_name}")
+        play_sfx('silent_execution')
         return f"Random track played: {clean_name}"
     else:
+        logger.error("Failed to start playing random track.")
+        play_sfx('silent_error')
         return "Failed to start playing random track."
 
 def music_play_random_album():
@@ -141,12 +165,15 @@ def music_play_random_album():
     try:
         # Получаем список всех записей в директории и фильтруем, оставляя только папки
         all_playlists = [entry.path for entry in os.scandir(MUSIC_LIBRARY_PATH) if entry.is_dir()]
+        play_sfx('silent_execution')
     except FileNotFoundError:
         logger.error("Error: Music library folder not found.")
+        play_sfx('silent_error')
         return "Error: Music library folder not found."
 
     if not all_playlists:
         logger.info("No ready-made playlists (folders) were found in the music library.")
+        play_sfx('silent_error')
         return "No ready-made playlists (folders) were found in the music library."
 
     random_playlist_path = random.choice(all_playlists) # Выбираем случайный путь к плейлисту из списка
@@ -161,25 +188,45 @@ def music_play_random_album():
     else:
         logger.error("Failed to start playing random playlist.")
         return "Failed to start playing random playlist."
+    
+def all_names_playlists():
+    """Возвращает названия всех существующих плейлистов"""
+    all_names_playlists = [playlist.name for playlist in os.scandir(MUSIC_LIBRARY_PATH)]
+    return "; ".join(all_names_playlists)
 
+def all_tracks_in_playlist(playlist_name):
+    """Возвращает названия всех существующих треков в указанном плейлисте."""
+    # Создаем путь, который будет работать на любой ОС
+    full_path = os.path.join(MUSIC_LIBRARY_PATH, playlist_name)
+    return [track.name for track in os.scandir(full_path)]
+
+# Взаимодействия с треками
 def music_pause_playback():
     """Ставит текущий трек на паузу."""
     success = _send_foobar_command(['/pause'])
+    logger.debug("Playback is paused." if success else "Failed to pause.")
+    play_sfx('silent_execution' if success else 'silent_error')
     return "Playback is paused." if success else "Failed to pause."
 
 def music_resume_playback():
     """Снимает воспроизведение с паузы."""
     success = _send_foobar_command(['/play'])
+    logger.debug("Playback resumed." if success else "Failed to resume.")
+    play_sfx('silent_execution' if success else 'silent_error')
     return "Playback resumed." if success else "Failed to resume."
 
 def music_play_next_track():
     """Включает следующий трек в плейлисте."""
     success = _send_foobar_command(['/next'])
+    logger.debug("Next track is on." if success else "Failed to change track.")
+    play_sfx('silent_execution' if success else 'silent_error')
     return "Next track is on." if success else "Failed to change track."
 
 def music_play_previous_track():
     """Включает предыдущий трек в плейлисте."""
     success = _send_foobar_command(['/prev'])
+    logger.debug("Previous track is on." if success else "Failed to change track.")
+    play_sfx('silent_execution' if success else 'silent_error')
     return "Previous track is on." if success else "Failed to change track."
 
 def music_clear_playlist():
@@ -188,17 +235,21 @@ def music_clear_playlist():
 
     # Проверка, что наш инструмент на месте
     if not os.path.exists(SILENT_TRACK_PATH):
-        msg = f"ERROR: Cleanup file '{SILENT_TRACK_PATH}' not found."
-        print(msg)
-        return msg
-        
+        logger.error(f"ERROR: Cleanup file '{SILENT_TRACK_PATH}' not found.")
+        play_sfx('silent_error')
+        return f"ERROR: Cleanup file '{SILENT_TRACK_PATH}' not found."
+
     # Главная команда: Остановить -> Заменить плейлист на "пустышку"
     success = _send_foobar_command(['/add', SILENT_TRACK_PATH])
     success = _send_foobar_command(['/play', SILENT_TRACK_PATH])
     
     if success:
+        logger.debug("Playlist cleared.")
+        play_sfx('silent_execution')
         return "Playlist cleared."
     else:
+        logger.error("Failed to clear playlist.")
+        play_sfx('silent_error')
         return "Failed to clear playlist."
 
 

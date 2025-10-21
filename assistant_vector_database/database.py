@@ -9,7 +9,7 @@ from assistant_general import general_settings as general_settings
 
 # Эмбеддинг модель, чтобы превращать запросы пользователя в векторы и искать похожие в базе данных
 print("Initialization of the embedding model.")
-play_sfx("start_embedding_model")
+play_sfx("start_system")
 embedding_model = HuggingFaceEmbeddings(
     model_name = "BAAI/bge-m3", # Можно выбрать intfloat/multilingual-e5-large - она более быстрая, но менее точная
     encode_kwargs = {"normalize_embeddings": True} # при создании векторов из текста делать нормализацию
@@ -17,7 +17,7 @@ embedding_model = HuggingFaceEmbeddings(
 
 # Векторная база данных
 print("Initialization of vector database.")
-play_sfx("lauch_vector_database")
+play_sfx("start_system")
 vectorstore = Chroma(
     collection_name="assistant_database", # Называем коллекцию внутри базы данных так
     embedding_function=embedding_model, # # Прикрепление модели эмбеддингов
@@ -38,15 +38,18 @@ def add_new_memory(new_text: str):
         ids=[record_id], 
         metadatas=[metadata]
     )
-    
+
+    play_sfx('silent_execution')
     print(f"New entry added to memory: '{new_text}'")
 
 def find_records_in_database(**kwargs):
     """Ищет записи в векторной базе данных и форматирует результат в читаемую строку."""
+    play_sfx('search')
 
     # Если запрос пуст
     query = kwargs.get('query')
     if not query:
+        play_sfx('silent_error')
         return
 
     results_with_scores = vectorstore.similarity_search_with_score(query, k=general_settings.NUM_RECORDS_FROM_DATABASE)
@@ -85,6 +88,7 @@ def find_records_in_database(**kwargs):
         # Соединяем только релевантные строки
         final_string = "\n".join(formatted_lines)
 
+    play_sfx('silent_execution')
     result = {"original_query": query, "database_context": final_string}
     print(f"\nFound records in database for query '{query}': \n{final_string}")
     

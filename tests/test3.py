@@ -1,46 +1,23 @@
-# import os
-# from fuzzywuzzy import process
+# Тесты подключения FastAPI сервера для обработки команд от клиента
+from fastapi import FastAPI
+import uvicorn
 
-# MUSIC_LIBRARY_PATH = "C:\\Users\\ivanc\\Desktop\\Project_V.E.G.A\\VEGA_core\\assistant_music\\music"
+# Создаем экземпляр FastAPI
+app = FastAPI()
 
-# def find_best_match(song_query: str):
-#     """Проходит по всем файлам, находит лучшее совпадение и возвращает его."""
-    
-#     all_tracks_names = []
-    
-#     # ПРАВИЛЬНЫЙ СПОСОБ использования os.walk
-#     for root, dirs, files in os.walk(MUSIC_LIBRARY_PATH): # В os.walk: root — путь к текущей папке; dirs — список названий подпапок в этой папке; files — список названий файлов в этой папке
-#         for filename in files:
-            
-#             clean_name = os.path.splitext(filename)[0]
-#             all_tracks_names.append(clean_name)
+# Создаем endpoint, которая будет слушать запросы
+@app.get("/")
+def read_root():
+    return {"Hello": "World"} # Вместо этого он будет отдавать index.html
 
-#     print("--- Список для поиска ---")
-#     print(all_tracks_names)
-#     print("\n")
+@app.post("/command")
+def process_command(command: dict):
+    user_query = command.get("query")
+    print(f"Получена команда от клиента: {user_query}")
+    # Здесь можно передавать user_query в "мозг" Веги
+    return {"status": "Command received", "response": "Thinking..."}
 
-#     best_match = process.extractOne(song_query, all_tracks_names)
-#     print(f"Результат поиска: {best_match}")
-#     return best_match
-
-# while True:
-#     song = input("Введите песню для поиска: ")
-#     if not song:
-#         break
-#     find_best_match(song)
-
-
-
-
-
-
-import requests
-
-try:
-    print("Пытаюсь подключиться к Google...")
-    response = requests.get('https://www.google.com', timeout=10)
-    print(f"Успех! Статус-код: {response.status_code}")
-    print("Значит, базовый выход в интернет из Python работает.")
-except Exception as e:
-    print("\nПИЗДЕЦ! Опять ошибка!")
-    print(f"Не удалось подключиться. Ошибка: {e}")
+if __name__ == "__main__":
+    # Запускаем сервер
+    # host="0.0.0.0" обязательно, Это делает сервер видимым в локальной сети
+    uvicorn.run(app, host="0.0.0.0", port=8000)

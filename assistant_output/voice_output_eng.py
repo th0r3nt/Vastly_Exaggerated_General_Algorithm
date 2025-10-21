@@ -4,6 +4,7 @@ import threading
 import sounddevice as sd
 from kokoro import KPipeline
 from assistant_event_bus.event_bus import subscribe
+from assistant_tools.utils import play_sfx
 
 # Kokoro генерирует аудио с частотой 24000 Гц. Это важно указать.
 SAMPLE_RATE = 24000
@@ -22,7 +23,7 @@ class SpeechModuleENG:
             sd.query_devices()
         except Exception as e:
             print(f"КРИТИЧЕСКАЯ ОШИБКА: Не найдено аудиоустройство вывода. {e}")
-            # В реальном приложении здесь можно было бы завершить работу или отключить модуль
+            play_sfx("error")
             return
 
         self.pipeline = KPipeline(lang_code=lang_code)
@@ -44,17 +45,17 @@ class SpeechModuleENG:
         """
         try:
             generator = self.pipeline(text, voice=self.voice)
+            play_sfx('execution')
             for _, _, audio_chunk in generator:
                 # audio_chunk - это и есть NumPy массив, который нам нужен
                 sd.play(audio_chunk, SAMPLE_RATE)
                 sd.wait()  # Ждем, пока текущий кусок аудио доиграет
         except Exception as e:
+            play_sfx("error")
             print(f"Ошибка во время синтеза или воспроизведения речи: {e}")
 
     def _tts_worker(self):
-        """
-        Работает в фоновом потоке, берет текст из очереди и озвучивает его.
-        """
+        """Работает в фоновом потоке, берет текст из очереди и озвучивает его."""
         while True:
             try:
                 text_to_speak = self.tts_queue.get()
@@ -65,6 +66,7 @@ class SpeechModuleENG:
                 
                 self.tts_queue.task_done()
             except Exception as e:
+                play_sfx("error")
                 print(f"Критическая ошибка в потоке озвучивания: {e}")
 
     def queue_text_for_synthesis(self, **kwargs):

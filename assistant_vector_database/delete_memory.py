@@ -17,30 +17,24 @@ vectorstore = Chroma(
     persist_directory="""./assistant_chroma_db""", # Сохранять в эту папку
     )
 
-# ВСТАВЛЯЕМ СЮДА ID ЗАПИСЕЙ, КОТОРЫЕ СТОИТ УДАЛИТЬ
-ids_to_delete = [
-    "a1470d29-35e1-4dab-ac9f-9a5f06d1bb40",
 
-]
-
-
-def delete_specific_records(ids: list):
+def delete_specific_records(ids_to_delete: str):
     """Удаляет записи из ChromaDB по списку их уникальных ID."""
-    if not ids:
+    if not ids_to_delete:
         print("Список ID для удаления пуст. Ничего не сделано.")
         return
 
-    print(f"Происходит удаление записей, количество: {len(ids)} ")
+    print("Происходит удаление записей.")
 
     try:
         # Получаем записи, чтобы показать, что именно мы удаляем
-        records_to_check = vectorstore.get(ids=ids, include=["documents"])
+        records_to_check = vectorstore.get(ids=ids_to_delete, include=["documents"])
         
         if not records_to_check['ids']:
             print("Ни одна из указанных записей не найдена в базе данных.")
             return
 
-        print("\n--- Будут удалены следующие записи: ---")
+        print("\n--- Будет удалена следующая запись: ---")
         for i, doc_id in enumerate(records_to_check['ids']):
             doc_text = records_to_check['documents'][i]
             print(f"  - ID: {doc_id}")
@@ -53,12 +47,16 @@ def delete_specific_records(ids: list):
             return
 
         # Удаляем записи по их ID
-        vectorstore.delete(ids=ids)
+        vectorstore.delete(ids=ids_to_delete)
         
-        print(f"\n✅ Успешно удалено {len(ids)} записей.")
+        print(f"✅ Запись успешно удалена.")
 
     except Exception as e:
         print(f"\n❌ Произошла ошибка при удалении: {e}")
 
 if __name__ == "__main__":
-    delete_specific_records(ids_to_delete)
+    print("Точные ID для удаления записей брать с помощью функции inspect_memory")
+    while True:
+        ids_to_delete = input("\nВведите точное ID записи для удаления: \n\n>> ")
+
+        delete_specific_records(ids_to_delete)

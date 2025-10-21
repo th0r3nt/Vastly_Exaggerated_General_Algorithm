@@ -3,8 +3,8 @@ from assistant_tools.utils import play_sfx
 
 class EventBus:
     def __init__(self):
-        self.listeners = {}
         play_sfx("processing")
+        self.listeners = {}
         print("\nEvent Bus: Initialized.\n")
 
     def subscribe(self, event_type: str, handler):
@@ -20,13 +20,16 @@ class EventBus:
                 try:
                     handler(*args, **kwargs)
                 except Exception as e:
+                    play_sfx("error")
                     print(f"Event Bus: Error in handler '{handler.__name__}' for the event '{event_type}': {e}")
 
 event_bus = EventBus()
 
 # Функции обертки
 def subscribe(event_type, handler):
+    play_sfx('silent_execution')
     event_bus.subscribe(event_type, handler)
 
 def publish(event_type, *args, **kwargs):
+    play_sfx('silent_execution')
     event_bus.publish(event_type, *args, **kwargs)  
