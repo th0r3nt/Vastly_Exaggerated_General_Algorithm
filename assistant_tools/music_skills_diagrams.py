@@ -1,12 +1,3 @@
-music_play_random_scheme = {
-    "name": "music_play_random",
-    "description": "Plays a random track from the user's entire music library. Use for general queries like 'play something', 'any music'.",
-    "parameters": {
-        "type": "object",
-        "properties": {}
-    },
-}
-
 music_pause_playback_scheme = {
     "name": "music_pause_playback",
     "description": "Pauses the currently playing music. If nothing is playing, does nothing.",
@@ -51,8 +42,7 @@ music_clear_playlist_scheme = {
         "properties": {}
     },
 }
-
-# Схемы для команд с параметрами 
+ 
 music_play_playlist_scheme = {
     "name": "music_play_playlist",
     "description": "Finds a playlist (a folder containing music) by name and plays all tracks from it, replacing the current queue. Use when the user requests to play an artist, album, or a specific playlist.",
@@ -88,15 +78,6 @@ music_play_track_scheme = {
                 "description": "The artist's name. This may not be specified. For example: 'Slipknot'",
             },
         },
-    },
-}
-
-music_play_random_album_scheme = {
-    "name": "music_play_random_album",
-    "description": "Includes a random existing playlist.",
-    "parameters": {
-        "type": "object",
-        "properties": {}
     },
 }
 

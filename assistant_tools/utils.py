@@ -6,13 +6,12 @@ import os
 
 # --- КОНФИГУРАЦИЯ ЗВУКОВ ---
 SFX_DIR = 'assistant_sounds'  # Папка со звуковыми файлами
-SFX_CONFIG = { # Ключ: название звуков (смотреть в папке assistant_sounds), значение: количество звуков в этой категории (смотреть на название звука, последний символ - номер звука)
-    'system_startup': 3,
+SFX_CONFIG = { # Ключ: название звуков (смотреть в папке assistant_sounds) без .mp3, значение: количество звуков в этой категории (смотреть на название звука, последний символ - номер звука)
+    'general_system_startup': 1, # Для запуска всей системы
     'select': 3,
     'hard_processing': 1,
-    'start_system': 2,
+    'start_additional_system': 4, # Для запуска отдельных элементов
     'processing': 2,
-    'start_embedding_model': 1,
     'search': 2,
     'error': 7,
     'silent_execution': 6,

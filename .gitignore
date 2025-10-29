@@ -25,3 +25,7 @@ assistant_chroma_db
 short_term_memory.json
 assistant_music
 vega_telegram_session.session
+all_history_of_dialogues.json
+assistant_local_models
+assistant_temporary_files
+vega_speech.mp3

@@ -5,8 +5,15 @@ import queue
 import sounddevice as sd
 import soundfile as sf
 from edge_tts import Communicate
-# from assistant_event_bus.event_bus import subscribe
+from assistant_event_bus.event_bus import subscribe
+from assistant_event_bus import event_definitions as events
 import os 
+from assistant_tools.utils import play_sfx
+import logging
+from assistant_general.logger_config import setup_logger
+
+setup_logger()
+logger = logging.getLogger(__name__)
 
 class SpeechModuleRUS:
     def __init__(self):
@@ -16,7 +23,7 @@ class SpeechModuleRUS:
         self.temp_folder = "assistant_temporary_files"
         os.makedirs(self.temp_folder, exist_ok=True)
         
-        # subscribe("GEMINI_RESPONSE", self.queue_text_for_synthesis)
+        subscribe(events.GEMINI_RESPONSE, self.queue_text_for_synthesis)
         print("The speech module has been initialized.")
 
     def synth(self, text: str, voice: str = "ru-RU-SvetlanaNeural"):
@@ -53,7 +60,9 @@ class SpeechModuleRUS:
                 self.tts_queue.task_done()
 
             except Exception as e:
-                print(f"Критическая ошибка в потоке озвучивания: {e}")
+                logger.error(f"Critical error in voice stream: {e}")
+                play_sfx("error")
+                print(f"Critical error in voice stream: {e}")
 
     def queue_text_for_synthesis(self, **kwargs):
         """

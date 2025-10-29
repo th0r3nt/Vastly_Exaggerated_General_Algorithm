@@ -5,10 +5,15 @@ import sounddevice as sd
 from kokoro import KPipeline
 from assistant_event_bus.event_bus import subscribe
 from assistant_tools.utils import play_sfx
+from assistant_event_bus import event_definitions as events
+import logging
+from assistant_general.logger_config import setup_logger
 
-# Kokoro генерирует аудио с частотой 24000 Гц. Это важно указать.
+setup_logger()
+logger = logging.getLogger(__name__)
+
+# Kokoro генерирует аудио с частотой 24000 Гц. Это важно указать
 SAMPLE_RATE = 24000
-
 SAMPLE_RATE = 24000
 
 class SpeechModuleENG:
@@ -22,7 +27,7 @@ class SpeechModuleENG:
             # Проверим, есть ли доступные аудиоустройства
             sd.query_devices()
         except Exception as e:
-            print(f"КРИТИЧЕСКАЯ ОШИБКА: Не найдено аудиоустройство вывода. {e}")
+            logger.error(f"Error: No audio output device found. {e}")
             play_sfx("error")
             return
 
@@ -30,7 +35,7 @@ class SpeechModuleENG:
         self.voice = voice
         self.tts_queue = queue.Queue()
         
-        subscribe("GEMINI_RESPONSE", self.queue_text_for_synthesis)
+        subscribe(events.GEMINI_RESPONSE, self.queue_text_for_synthesis)
         
         self.worker_thread = threading.Thread(target=self._tts_worker, daemon=True)
         print("The speech module has been initialized.")
@@ -52,7 +57,7 @@ class SpeechModuleENG:
                 sd.wait()  # Ждем, пока текущий кусок аудио доиграет
         except Exception as e:
             play_sfx("error")
-            print(f"Ошибка во время синтеза или воспроизведения речи: {e}")
+            logger.error(f"Error during speech synthesis or playback: {e}")
 
     def _tts_worker(self):
         """Работает в фоновом потоке, берет текст из очереди и озвучивает его."""
@@ -67,7 +72,7 @@ class SpeechModuleENG:
                 self.tts_queue.task_done()
             except Exception as e:
                 play_sfx("error")
-                print(f"Критическая ошибка в потоке озвучивания: {e}")
+                logger.error(f"Critical error in voiceover stream: {e}")
 
     def queue_text_for_synthesis(self, **kwargs):
         """

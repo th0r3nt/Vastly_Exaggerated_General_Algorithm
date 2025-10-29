@@ -4,6 +4,7 @@ from datetime import datetime
 import uuid
 from langchain_huggingface import HuggingFaceEmbeddings 
 from langchain_chroma import Chroma  
+import assistant_general.general_settings as general_settings
 
 embedding_model = HuggingFaceEmbeddings(
     model_name = "BAAI/bge-m3", # Можно выбрать intfloat/multilingual-e5-large - она более быстрая, но менее точная
@@ -12,7 +13,7 @@ embedding_model = HuggingFaceEmbeddings(
 
 # Векторная база данных
 vectorstore = Chroma(
-    collection_name="assistant_database", # Называем коллекцию внутри базы данных так
+    collection_name=general_settings.CHROMA_COLLECTION_NAME, # Называем коллекцию внутри базы данных так
     embedding_function=embedding_model, # # Прикрепление модели эмбеддингов
     persist_directory="""./assistant_chroma_db""", # Сохранять в эту папку
     )

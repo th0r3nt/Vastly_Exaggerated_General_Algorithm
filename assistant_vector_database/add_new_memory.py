@@ -2,6 +2,7 @@ from datetime import datetime
 import uuid
 from langchain_huggingface import HuggingFaceEmbeddings 
 from langchain_chroma import Chroma  
+import assistant_general.general_settings as general_settings
 
 # Эмбеддинг модель, чтобы превращать запросы пользователя в векторы и искать похожие в базе данных
 embedding_model = HuggingFaceEmbeddings(
@@ -11,7 +12,7 @@ embedding_model = HuggingFaceEmbeddings(
 
 # Векторная база данных
 vectorstore = Chroma(
-    collection_name="assistant_database", # Называем коллекцию внутри базы данных так
+    collection_name=general_settings.CHROMA_COLLECTION_NAME, # Называем коллекцию внутри базы данных так
     embedding_function=embedding_model, # # Прикрепление модели эмбеддингов
     persist_directory="""./assistant_chroma_db""", # Сохранять в эту папку
     )

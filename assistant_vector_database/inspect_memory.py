@@ -1,12 +1,13 @@
 # inspect_memory.py
 import chromadb
+import assistant_general.general_settings as general_settings
 
 client = chromadb.PersistentClient(path="assistant_chroma_db") 
 
 def inspect_memory():
-    """Выводит ВСЕ записи в базе данных"""
+    """Выводит ВСЕ записи в базе данных."""
     try:
-        collection_name = "assistant_database"
+        collection_name = general_settings.CHROMA_COLLECTION_NAME
         collection = client.get_collection(name=collection_name)
         print(f"Successfully connected to collection: '{collection_name}'")
 
@@ -21,21 +22,24 @@ def inspect_memory():
         )
 
         num_records = len(all_records['ids'])
-        print(f"\n--- Found {num_records} records in V.E.G.A. memory ---\n")
+        print(f"\nFound {num_records} records in V.E.G.A. database.")
+
+        result = []
 
         for i in range(num_records):
             record_id = all_records['ids'][i]
             document = all_records['documents'][i]
             metadata = all_records['metadatas'][i]
 
-            print(f"--- Record ID: {record_id} ---")
-            print(f"Document (Text): {document}")
-            print(f"Metadata: {metadata}")
-            print("-" * 20 + "\n")
+            result.append(f"Record ID: {record_id}; Document (Text): {document}; Metadata: {metadata}")
+
+        print("\n".join(result))
+        return "\n".join(result)
 
     except Exception as e:
         print(f"An error occurred while fetching records: {e}")
 
 
+    
 if __name__ == "__main__":
     inspect_memory()

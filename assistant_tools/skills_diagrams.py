@@ -27,28 +27,27 @@ search_in_google_scheme = {
     },
 }
 
-get_time_scheme = {
-    "name": "get_time",
-    "description": "Gets the current actual time.",
+get_time_and_date_scheme = {
+    "name": "get_time_and_date",
+    "description": "Gets the current actual time and actual date.",
     "parameters": {
         "type": "object",
         "properties": {}
     },
 }
-
-get_date_scheme = {
-    "name": "get_date",
-    "description": "Gets the current actual date.",
-    "parameters": {
-        "type": "object",
-        "properties": {}
-    },
-}
-
 
 make_screenshot_scheme = {
     "name": "make_screenshot",
-    "description": "Takes a screenshot of the user's home screen and saves it to a file. Returns JSON with the path to the created file.",
+    "description": "Takes a screenshot of the user's home screen and saves it to a file.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    },
+}
+
+get_screenshot_context_scheme = {
+    "name": "get_screenshot_context",
+    "description": "Returns a screenshot of the PC's main screen",
     "parameters": {
         "type": "object",
         "properties": {}
@@ -365,6 +364,30 @@ get_habr_news_scheme = {
 get_system_metrics_scheme = {
     "name": "get_system_metrics",
     "description": "Gets the current load, temperature of the video card, processor and RAM in the system.",
+    "parameters": {
+        "type": "object",
+        "properties": {}
+    },
+}
+
+delete_database_entry_scheme = {
+    "name": "delete_database_entry",
+    "description": "Removes a single record from vector database by its unique ID. Used to clean the database of outdated or duplicate facts.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "record_id": {
+                "type": "string",
+                "description": "The unique identifier (ID) of the record to be deleted. Specify the exact value, for example, '2b2dd972-cea6-4429-8aa1-c10c15c30d9e'.",
+            },
+        },
+        "required": ["record_id"],
+    },
+}
+
+analyze_database_scheme = {
+    "name": "analyze_database",
+    "description": "Displays all records from the database.",
     "parameters": {
         "type": "object",
         "properties": {}

@@ -6,20 +6,27 @@ from datetime import datetime
 from assistant_event_bus.event_bus import subscribe, publish
 import uuid
 from assistant_general import general_settings as general_settings
+from assistant_event_bus import event_definitions as events
+import os
+from dotenv import load_dotenv
+import chromadb
+
+load_dotenv() # для загрузки API ключей и путей из .env
+LOCAL_EMBEDDING_MODEL_PATH = os.getenv("LOCAL_EMBEDDING_MODEL_PATH")
 
 # Эмбеддинг модель, чтобы превращать запросы пользователя в векторы и искать похожие в базе данных
 print("Initialization of the embedding model.")
-play_sfx("start_system")
+play_sfx("start_additional_system")
 embedding_model = HuggingFaceEmbeddings(
-    model_name = "BAAI/bge-m3", # Можно выбрать intfloat/multilingual-e5-large - она более быстрая, но менее точная
-    encode_kwargs = {"normalize_embeddings": True} # при создании векторов из текста делать нормализацию
-    ) 
+    model_name=LOCAL_EMBEDDING_MODEL_PATH,
+    encode_kwargs={"normalize_embeddings": True}
+)
 
 # Векторная база данных
 print("Initialization of vector database.")
-play_sfx("start_system")
+play_sfx("start_additional_system")
 vectorstore = Chroma(
-    collection_name="assistant_database", # Называем коллекцию внутри базы данных так
+    collection_name=general_settings.CHROMA_COLLECTION_NAME, # Называем коллекцию внутри базы данных так
     embedding_function=embedding_model, # # Прикрепление модели эмбеддингов
     persist_directory="""./assistant_chroma_db""", # Сохранять в эту папку
     )
@@ -44,27 +51,27 @@ def add_new_memory(new_text: str):
 
 def find_records_in_database(**kwargs):
     """Ищет записи в векторной базе данных и форматирует результат в читаемую строку."""
-    play_sfx('search')
 
-    # Если запрос пуст
     query = kwargs.get('query')
     if not query:
         play_sfx('silent_error')
         return
-
+    
+    play_sfx('search')
+    print("Поиск записей в базе данных.")
     results_with_scores = vectorstore.similarity_search_with_score(query, k=general_settings.NUM_RECORDS_FROM_DATABASE)
 
     # Если база пуста
     if not results_with_scores:
         result = {"original_query": query, "database_context": "No relevant records were found in the database."}
         print("No relevant records were found in the database.")
-        publish("USER_SPEECH_AND_RECORDS_FOUND_IN_DB", result)
+        publish(events.USER_SPEECH_AND_RECORDS_FOUND_IN_DB, result)
         return 
     
     formatted_lines = []
 
     print("\nSearching for records in the database:")
-    
+
     for document, score in results_with_scores:
         if score <= general_settings.SIMILARITY_THRESHOLD:
             # Если запись ДОСТАТОЧНО похожа, обрабатываем ее
@@ -90,13 +97,37 @@ def find_records_in_database(**kwargs):
 
     play_sfx('silent_execution')
     result = {"original_query": query, "database_context": final_string}
-    print(f"\nFound records in database for query '{query}': \n{final_string}")
+    if general_settings.NUM_RECORDS_FROM_DATABASE <= 15: # Если передана вся база - консоль будет вся в записях; стоит сделать проверку
+        print(f"\nFound records in database for query '{query}': \n{final_string}")
     
-    publish("USER_SPEECH_AND_RECORDS_FOUND_IN_DB", result)
+    publish(events.USER_SPEECH_AND_RECORDS_FOUND_IN_DB, result)
+
+def get_all_records_as_string():
+    """Извлекает все записи из ChromaDB и форматирует их в единую строку."""
+    try:
+        client = chromadb.PersistentClient(path="./assistant_chroma_db")
+        collection = client.get_collection(name=general_settings.CHROMA_COLLECTION_NAME)
+        
+        all_records = collection.get(include=["metadatas", "documents"])
+        
+        if not all_records['ids']:
+            return "База данных (память) пуста."
+        
+        formatted_lines = []
+        for i in range(len(all_records['ids'])):
+            doc = all_records['documents'][i]
+            meta = all_records['metadatas'][i]
+            date = meta.get('creation_date', 'N/A')
+            formatted_lines.append(f"[{date}]: {doc}")
+        
+        return "\n".join(formatted_lines)
+    except Exception as e:
+        print(f"Ошибка при получении всех записей из БД: {e}")
+        return f"Ошибка при доступе к памяти: {e}"
 
 
 def initialize_database():
-    subscribe("USER_SPEECH", find_records_in_database)
+    subscribe(events.USER_SPEECH, find_records_in_database)
 
 if __name__ == "__main__":
     while True:

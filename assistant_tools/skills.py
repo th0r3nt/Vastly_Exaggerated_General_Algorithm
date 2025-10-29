@@ -17,6 +17,7 @@ from ctypes import cast, POINTER
 from comtypes import CLSCTX_ALL
 import pythoncom
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+import assistant_general.general_settings as general_settings
 from assistant_general.logger_config import setup_logger
 from assistant_tools.utils import play_sfx
 from assistant_vector_database.database import add_new_memory
@@ -24,6 +25,10 @@ from bs4 import BeautifulSoup
 import wmi
 from PIL import Image 
 from pyrogram import Client
+from assistant_vector_database.database import vectorstore
+import chromadb
+
+client = chromadb.PersistentClient(path="assistant_chroma_db") # Для навыков, которые взаимодействуют с базой данных (сканирование всех существующих записей, удаление старых и ненужных записей)
 
 setup_logger()
 logger = logging.getLogger(__name__)
@@ -73,17 +78,11 @@ def search_in_google(search_query: str) -> str:
     logger.debug(f"The search page for the query is open: '{search_query}'.")
     return f"The search page for the query is open: '{search_query}'."
 
-def get_time(**kwargs) -> str:
+def get_time_and_date(**kwargs) -> str:
     """Возвращает текущее время в формате ЧЧ:ММ."""
     play_sfx('silent_execution')
-    now = datetime.datetime.now()
-    return f"Current time: {now.strftime('%H:%M')}."
-
-def get_date() -> str:
-    """Возвращает сегодняшнюю дату."""
-    play_sfx('silent_execution')
-    now = datetime.datetime.now()
-    return f"Today {now.day} {MONTHS[now.month - 1]}."
+    current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return current_date
 
 def make_screenshot():
     """Делает скриншот и сохраняет его в папку 'assistant_temporary_files'. Папка создается автоматически, если ее нет."""
@@ -97,7 +96,7 @@ def make_screenshot():
         # Проверяем, существует ли папка, и создаем ее, если нет
         os.makedirs(temp_folder, exist_ok=True) # exist_ok=True означает, что ошибки не будет, если папка уже существует
         
-        # 4. Делаем скриншот и сохраняем его сразу по полному пути
+        # Делаем скриншот и сохраняем его сразу по полному пути
         screenshot = pyautogui.screenshot(full_path)
         screenshot.save(full_path)
 
@@ -155,7 +154,7 @@ def lock_pc():
         play_sfx('silent_error')
         return "The command only works on the Windows operating system."
     
-def get_system_volume() -> str: # Возвращаемый тип изменен на str, как у вас в коде
+def get_system_volume() -> str: 
     """Возвращает текущую системную громкость в процентах (от 0 до 100)."""
     play_sfx('silent_execution')
     # Инициализируем COM для текущего потока
@@ -289,7 +288,7 @@ def get_habr_news(limit=10):
                 'summary': summary
             })
 
-        # for i, art in enumerate(result, 1):
+        # for i, art in enumerate(result, 1): # Отладка
         #     print(f"{i}. {art['title']}\n   Ссылка: {art['link']}\n   Кратко: {art['summary']}\n") # ДЛЯ ОТЛАДКИ
 
         play_sfx("silent_execution")
@@ -496,7 +495,59 @@ def currently_open_windows():
         if title: # Игнорируем пустые заголовки
             titles.append(title)
     return titles
-    
 
+def delete_database_entry(record_id: str):
+    """Удаляет одну запись из долговременной памяти по ее уникальному ID."""
+    try:
+        # ChromaDB ожидает список ID, даже если он один
+        vectorstore.delete(ids=[record_id])
+        logger.info(f"Successfully deleted memory entry with ID: {record_id}")
+        play_sfx('silent_execution')
+        return f"Запись с ID {record_id} успешно удалена."
+    except Exception as e:
+        logger.error(f"Error deleting memory entry with ID {record_id}: {e}")
+        play_sfx('error')
+        return f"Ошибка при удалении записи с ID {record_id}: {e}"
+
+def analyze_database():
+    """Выводит ВСЕ записи в базе данных."""
+    try:
+        collection_name = general_settings.CHROMA_COLLECTION_NAME
+        collection = client.get_collection(name=collection_name)
+        print(f"Successfully connected to collection: '{collection_name}'")
+
+    except Exception as e:
+        print(f"Error connecting to collection: {e}")
+        print("Available collections:", [col.name for col in client.list_collections()])
+        return f"Error connecting to collection: {e}"
+
+    try:
+        all_records = collection.get(
+            include=["metadatas", "documents"]
+        )
+
+        num_records = len(all_records['ids'])
+        logger.debug(f"\nFound {num_records} records in V.E.G.A. database.")
+        print(f"\nFound {num_records} records in V.E.G.A. database.")
+
+        result = []
+
+        for i in range(num_records):
+            record_id = all_records['ids'][i]
+            document = all_records['documents'][i]
+            metadata = all_records['metadatas'][i]
+
+            # Отладка
+            # print(f"Record ID: {record_id}")
+            # print(f"Document (Text): {document}")
+            # print(f"Metadata: {metadata}")
+            # print("-" * 20 + "\n")
+            result.append(f"Record ID: '{record_id}'; Document (Text): {document}; Metadata: {metadata}")
+
+        print("\n".join(result))
+        return "\n".join(result)
+
+    except Exception as e:
+        print(f"An error occurred while fetching records: {e}")
 
 

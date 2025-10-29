@@ -1,15 +1,20 @@
 # hotkeys_manager.py
-from assistant_brain.brain import litany_of_analysis_screen 
+from assistant_event_bus.event_bus import publish
+from assistant_event_bus import event_definitions as events
 import keyboard
 import threading
 
-hotkey_activate_litany_of_analysis_screen = "ctrl+alt+shift+f1"
+hotkey_activate_analysis_screen = "ctrl+alt+shift+f1"
 deactivate_hotkey_manager = "ctrl+shift+alt+f2"
+
+def on_analysis_hotkey():
+    """Публикует событие, когда нажата горячая клавиша анализа."""
+    print("Hotkey for screen analysis detected. Publishing event.")
+    publish(events.HOTKEY_ANALYSIS_TRIGGERED)
 
 def _setup_hotkeys():
     """Настраивает все глобальные горячие клавиши."""
-    keyboard.add_hotkey(hotkey_activate_litany_of_analysis_screen, litany_of_analysis_screen) # Горячая клавиша для "Литании Анализа", просмотра и анализа экрана
-    print(f"Hotkey {hotkey_activate_litany_of_analysis_screen} added for function 'litany_of_analysis_screen'.")
+    keyboard.add_hotkey(hotkey_activate_analysis_screen, on_analysis_hotkey)
     # В будущем можно добавить остальные
 
 def _hotkeys_manager():

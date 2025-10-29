@@ -11,15 +11,19 @@ setup_logger()
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-API_ID = os.getenv("API_ID")
-API_HASH = os.getenv("API_HASH")
-SESSION_NAME = "vega_telegram_session"
 
-500
+API_ID = os.getenv("API_ID") # Telegram
+API_HASH = os.getenv("API_HASH") # Telegram
+SESSION_NAME = "vega_telegram_session" # Telegram
+
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__)) #  Папка, где лежит этот файл
 
 # ДЛЯ РЕГИСТРАЦИИ НОВЫХ НАВЫКОВ В ВЕГУ НУЖНО:
 # Написать json схему в social_media_skills_diagrams.py
 # Перейти в assistant_brain.added_skills.py и следовать инструкциям, которые описаны в файле
+
+# -----------------------------------------------------------------------------------------------------------
+# TELEGRAM НАВЫКИ
 
 async def _get_telegram_channel_data(client: Client, channel_username: str, limit_posts: int):
     """Внутренняя асинхронная функция, которая делает всю работу с Pyrogram."""
@@ -54,7 +58,6 @@ async def _get_telegram_channel_data(client: Client, channel_username: str, limi
 # Синхронная обертка для вызова из skills_registry
 def get_telegram_channel_info(channel_username: str, limit_posts: int = 500):
     """Запускает асинхронный код и возвращает готовый результат в виде строки. Принимает имя канала в формате @channel_name и количество постов."""
-    MODULE_DIR = os.path.dirname(os.path.abspath(__file__)) # Папка, где лежит этот файл
 
     async def main():
         if not API_ID or not API_HASH:
@@ -86,8 +89,13 @@ def get_telegram_channel_info(channel_username: str, limit_posts: int = 500):
         play_sfx('error')
         return f"Error: Failed to execute Telegram request: {e}"
 
+# КОНЕЦ TELEGRAM НАВЫКОВ
+# -----------------------------------------------------------------------------------------------------------
+
+
 
 if __name__ == "__main__":
+    import time
     # Тестовый вызов
-    test_result = get_telegram_channel_info("@VEGA_and_other_heresy")
-    print(test_result)
+    print(get_telegram_channel_info("VEGA_and_other_heresy"))
+    time.sleep(10)

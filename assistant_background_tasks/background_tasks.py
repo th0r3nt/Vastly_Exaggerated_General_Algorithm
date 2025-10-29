@@ -1,14 +1,16 @@
 # Когда-нибудь, когда-нибудь
-
-# Базовый скелет
 import schedule
 import time
 import random
-from assistant_brain.proactive_logic import run_proactive_check # Эту функцию нужно будет создать
+
+def test():
+    print("test")
 
 def start_scheduler():
-    # Запускать проактивную проверку каждые 5-15 минут
-    schedule.every(random.randint(5, 15)).minutes.do(run_proactive_check)
+    # Запускать проактивную проверку каждые n минут
+    random_minytes = random.randint(5, 10)
+    print(f"Функция будет вызвана через: {random_minytes} минут.")
+    schedule.every(random_minytes).minutes.do(test)
 
     while True:
         schedule.run_pending()
@@ -30,6 +32,10 @@ def start_scheduler():
 # Анализ системных ресурсов. Что делает: Мониторит использование CPU, памяти и диска, чтобы предупредить пользователя о возможных проблемах (Изменено: передавать эти данные в отдельную функцию "ты заскучала, ...", так будет более эффективно)
 
 
+if __name__ == "__main__":
+    start_scheduler()
+    time.sleep(2)
+    start_scheduler()
 
 
 # В main.py:
